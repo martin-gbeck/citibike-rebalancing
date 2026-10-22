@@ -1,0 +1,8 @@
+.DS_Store
+.citibike_rebalancing.synced
+# the trip files are about 3 GB and sit in a .nosync folder so iCloud skips them; lib/fetching.py downloads them again
+data/raw/tripdata.nosync/
+# rebuilt by prepare_data.py and the scripts after it, about 300 MB
+data/processed/
+__pycache__/
+.ruff_cache/
