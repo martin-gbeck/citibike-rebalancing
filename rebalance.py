@@ -2,12 +2,16 @@
 # # Simulating rebalancing schedules on two years of real trips
 # Every trip of a year is replayed, in 5-minute slots, through every station with known docks,
 # once per schedule. A schedule sets each station's stock at 04:00 and, optionally, again at one
-# midday hour; riders who find their station empty or full are counted as shortages.
+# midday hour; riders who find their station empty or full are counted as shortages. A rider
+# turned away at an empty station never makes the trip, so the bike they would have brought never
+# reaches their destination.
 #
 # `python rebalance.py dev` compares settings on the development year (November 2024 to
 # September 2025, October being the first history); `python rebalance.py test` scores the chosen
 # schedules once on the test year (October 2025 to September 2026). Each writes
-# `data/processed/simulation-<year>.npz`.
+# `data/processed/simulation-<year>.npz`, about 3 minutes and 1.5 GB. `--independent` treats every
+# station on its own instead, so a turned-away rider still arrives, the simpler model that
+# flatters schedules which move few bikes.
 
 # %%
 import os
@@ -30,7 +34,9 @@ from lib.rebalancing import (
     SLOTS_PER_DAY,
     expected_shortages,
     load_day_slots,
+    load_trip_slots,
     shortage_table,
+    simulate_network_slots,
     simulate_slots,
     slot_of_hour,
     spend_budget,
@@ -74,7 +80,10 @@ class Policy:
     family: str = field(default="", compare=False)
 
 
-year = sys.argv[1] if len(sys.argv) > 1 else "dev"
+year = next(
+    (argument for argument in sys.argv[1:] if not argument.startswith("--")), "dev"
+)
+network = "--independent" not in sys.argv
 # bikes loaded or unloaded per night for the budget rule, and stations visited at midday
 BUDGETS = (250, 500, 1000, 2000, 3000, 4000, 6000, 9000)
 MIDDAY_STATIONS = (25, 50, 100, 200, 400)
@@ -122,36 +131,29 @@ if year == "dev":
         *common_policies(10, False),
         *[
             Policy(f"band-{days}", "band", history_days=days, family="band by history")
-            for days in (3, 5, 20, 40)
+            for days in (5, 20)
         ],
+        Policy("band-10-scaled", "band", scaled=True, family="band scaled"),
         *[
             Policy(
-                f"band-{days}-scaled",
-                "band",
-                history_days=days,
-                scaled=True,
-                family="band scaled",
-            )
-            for days in (5, 10, 20)
-        ],
-        *[
-            Policy(
-                f"band-midday-{hour}",
-                "band",
+                f"budget-3000-midday-{hour}-50",
+                "budget",
+                budget=3000,
                 midday_hour=hour,
-                midday_stations=100,
-                family="band + midday",
+                midday_stations=50,
+                family="midday hour",
             )
-            for hour in (10, 12, 14)
+            for hour in (10, 12)
         ],
-        *midday_policies(10, 2000, 14),
         *midday_policies(10, 3000, 14),
+        *midday_policies(10, 4000, 14),
     ]
 else:
-    # chosen on the development year (its printout): 10 days of history (20 cut shortages 1% for 11%
-    # more bikes), no volume scaling (more shortages for more bikes at every length), a nightly
-    # budget of 3,000 bikes loaded or unloaded (fewest shortages of the sweep), the visit at 14:00
-    # (fewer shortages than 10:00 or 12:00)
+    # chosen on the development year: 10 days of history (20 cut shortages 1% for 10% more bikes),
+    # no volume scaling (more shortages for more bikes), the visit at 14:00 (fewer shortages than
+    # 10:00 or 12:00), and the night budget and midday stations with the fewest shortages among
+    # those moving no more bikes than Citi Bike reported moving (2,707 a day, January to September
+    # 2025): a budget of 3,000 and 100 stations, 2,543 bikes a day
     policies = [*common_policies(10, False), *midday_policies(10, 3000, 14)]
 
 # %% [markdown]
@@ -263,6 +265,10 @@ stock_before_move = np.zeros(
 stock_after_move = np.zeros_like(stock_before_move)
 band_low = np.full((station_count, len(eval_days)), np.nan, dtype=np.float32)
 band_high = np.full_like(band_low, np.nan)
+# arrivals struck because their riders were turned away at the start, by slot of the day
+cancelled_arrivals = np.zeros(
+    (policy_count, station_count, SLOTS_PER_DAY), dtype=np.int32
+)
 midday_slots = sorted(
     {slot_of_hour(policy.midday_hour) for policy in policies if policy.midday_hour}
 )
@@ -274,6 +280,11 @@ while month_first <= last_day:
     starts, ends = load_day_slots(
         PROCESSED / "bins", station_ids, month_first, block_days
     )
+    trip_slots = None
+    if network:
+        trip_slots = load_trip_slots(
+            PROCESSED / "trips", station_ids, month_first, block_days, first_day
+        )
     for offset in range(block_days):
         day = day_index[month_first + timedelta(days=offset)]
         eval_i = eval_days.index(calendar[day])
@@ -359,12 +370,23 @@ while month_first <= last_day:
                     bikes_in_by_station[p, chosen] += np.maximum(midday_move, 0)
                     bikes_out_by_station[p, chosen] += np.maximum(-midday_move, 0)
                     stock[p, chosen] = target[chosen]
-            stock, empty, full = simulate_slots(
-                stock,
-                capacity,
-                starts[:, offset, segment_start:segment_end],
-                ends[:, offset, segment_start:segment_end],
-            )
+            if trip_slots is not None:
+                stock, empty, full = simulate_network_slots(
+                    stock,
+                    capacity,
+                    starts[:, offset, segment_start:segment_end],
+                    ends[:, offset, segment_start:segment_end],
+                    trip_slots,
+                    cancelled_arrivals,
+                    (calendar[day] - first_day).days * SLOTS_PER_DAY + segment_start,
+                )
+            else:
+                stock, empty, full = simulate_slots(
+                    stock,
+                    capacity,
+                    starts[:, offset, segment_start:segment_end],
+                    ends[:, offset, segment_start:segment_end],
+                )
             empty_by_day[:, eval_i] += empty.sum(axis=(1, 2))
             full_by_day[:, eval_i] += full.sum(axis=(1, 2))
             shortages_by_station += (empty + full).sum(axis=2)
@@ -402,7 +424,7 @@ with pl.Config(tbl_rows=40, tbl_cols=-1, tbl_width_chars=200, float_precision=1)
     print(summary)
 
 np.savez_compressed(
-    PROCESSED / f"simulation-{year}.npz",
+    PROCESSED / f"simulation-{year}{'' if network else '-independent'}.npz",
     policy=np.array([policy.name for policy in policies]),
     family=np.array([policy.family for policy in policies]),
     station_id=np.array(station_ids),
@@ -423,4 +445,6 @@ np.savez_compressed(
     band_high=band_high,
     capacity=capacity,
 )
-summary.write_parquet(PROCESSED / f"simulation-{year}-summary.parquet")
+summary.write_parquet(
+    PROCESSED / f"simulation-{year}{'' if network else '-independent'}-summary.parquet"
+)

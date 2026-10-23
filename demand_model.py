@@ -32,7 +32,7 @@ from plotnine import (
     theme,
 )
 
-from lib.chart_style import BLUE, CONTEXT, FIGURES, INK, ORANGE, REPORT_THEME
+from lib.chart_style import BLUE, CONTEXT, FIGURES, INK, LOSING_RED, REPORT_THEME
 from lib.fetching import fetch_weather
 from lib.rebalancing import HOLIDAYS
 
@@ -209,7 +209,7 @@ figure_7 = (
     + geom_vline(xintercept=0, color=CONTEXT, size=0.4)
     + geom_errorbarh(aes(xmin="low", xmax="high"), height=0.3, size=0.5)
     + geom_point(size=1.8)
-    + scale_color_manual(values={"more": BLUE, "fewer": ORANGE}, guide=None)
+    + scale_color_manual(values={"more": BLUE, "fewer": LOSING_RED}, guide=None)
     + labs(
         title="What moves a day's riding",
         x="change in the day's trips, %",

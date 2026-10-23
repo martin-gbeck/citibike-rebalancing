@@ -1,7 +1,9 @@
 """Pulling Citi Bike trips, station capacities and New York weather, each cached under data/raw/."""
 
 import json
+import re
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from datetime import date
@@ -164,3 +166,54 @@ def fetch_weather(start: date, end: date, raw_dir: Path) -> pl.DataFrame:
         pl.col("snowfall (cm)").alias("snowfall_cm"),
         pl.col("wind_speed_10m (km/h)").alias("wind_kmh"),
     )
+
+
+# Citi Bike's monthly reports to NYC DOT, listed at https://citibikenyc.com/system-data/operating-reports;
+# the file names are not regular, so they are spelled out. May 2026 is not posted
+OPERATING_REPORTS = (
+    "https://mot-marketing-whitelabel-prod.s3.us-east-1.amazonaws.com/nyc"
+)
+OPERATING_REPORT_FILES = {
+    date(2025, 1, 1): "JAN-2025", date(2025, 2, 1): "February-2025", date(2025, 3, 1): "March-2025",
+    date(2025, 4, 1): "April-2025", date(2025, 5, 1): "May-2025", date(2025, 6, 1): "June-2025",
+    date(2025, 7, 1): "July-2025", date(2025, 8, 1): "August-2025", date(2025, 9, 1): "September-2025",
+    date(2025, 10, 1): "October-2025", date(2025, 11, 1): "November-2025",
+    date(2025, 12, 1): "December-2025", date(2026, 1, 1): "January-2026",
+    date(2026, 2, 1): "February-2026", date(2026, 3, 1): "March-2026", date(2026, 4, 1): "April-2026",
+    date(2026, 6, 1): "June-2026", date(2026, 7, 1): "July-2026", date(2026, 8, 1): "August-2026",
+    date(2026, 9, 1): "September-2026",
+}  # fmt: skip
+
+
+def fetch_rebalanced_bikes(raw_dir: Path) -> pl.DataFrame:
+    """Bikes Citi Bike reports it rebalanced each month, by truck, van, valet and Bike Angels.
+
+    Downloads each monthly report once to `raw_dir/operating-reports/` and reads the sentence
+    "Citi Bike staff rebalanced a total of N bicycles" with poppler's `pdftotext`.
+    Columns: month, bikes_rebalanced.
+    """
+    folder = raw_dir / "operating-reports"
+    folder.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, date | int]] = []
+    for month, stem in OPERATING_REPORT_FILES.items():
+        path = folder / f"{stem}.pdf"
+        if not path.exists():
+            response = requests.get(
+                f"{OPERATING_REPORTS}/{stem}-Citi-Bike-Monthly-Report.pdf", timeout=60
+            )
+            response.raise_for_status()
+            path.write_bytes(response.content)
+        text = subprocess.run(
+            ["pdftotext", "-layout", str(path), "-"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        found = re.search(
+            r"rebalanced a total of\s+([\d,]+)\s+bicycles", " ".join(text.split())
+        )
+        if found:
+            rows.append(
+                {"month": month, "bikes_rebalanced": int(found[1].replace(",", ""))}
+            )
+    return pl.DataFrame(rows)

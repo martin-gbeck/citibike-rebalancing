@@ -5,6 +5,7 @@ minutes. Arrays are indexed [station, day, slot], or [policy, station] for the s
 rebalancing policies simulated side by side.
 """
 
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
@@ -167,3 +168,130 @@ def spend_budget(
     ups = np.bincount(station[is_up], minlength=len(stock))
     downs = np.bincount(station[~is_up], minlength=len(stock))
     return stock + ups - downs
+
+
+@dataclass(frozen=True)
+class TripSlots:
+    """The trips of one block of days, sorted by start slot, for `simulate_network_slots`.
+
+    Slots are counted from 04:00 on the first day simulated, so a trip that ends in the next block
+    keeps a slot number that block understands. `rank` is a trip's place among the trips leaving
+    the same station in the same slot; `arrives` is false for trips that end outside the simulated
+    stations or run longer than a day. `bounds[k]` is the first trip starting in the block's
+    k-th slot.
+    """
+
+    origin: np.ndarray
+    destination: np.ndarray
+    end_slot: np.ndarray
+    rank: np.ndarray
+    arrives: np.ndarray
+    bounds: np.ndarray
+    first_slot: int
+
+
+def load_trip_slots(
+    trips_dir: Path,
+    station_ids: list[str],
+    first_day: date,
+    days: int,
+    simulation_start: date,
+) -> TripSlots:
+    """The trips starting in `days` service days from `first_day`, from the test-year trip table."""
+    window_start = datetime.combine(first_day, time(DAY_START_HOUR))
+    origin_time = datetime.combine(simulation_start, time(DAY_START_HOUR))
+    rows = pl.DataFrame(
+        {"station_id": station_ids, "row": np.arange(len(station_ids), dtype=np.int32)}
+    )
+    trips = (
+        pl.scan_parquet(trips_dir / "*.parquet")
+        .filter(
+            pl.col("start_slot").is_between(
+                window_start, window_start + timedelta(days=days), closed="left"
+            )
+        )
+        .join(rows.lazy(), left_on="start_station_id", right_on="station_id")
+        .join(
+            rows.lazy().rename({"row": "destination"}),
+            left_on="end_station_id",
+            right_on="station_id",
+            how="left",
+        )
+        .select(
+            origin="row",
+            destination=pl.col("destination").fill_null(-1),
+            # slots counted from 04:00 on the first simulated day
+            start=((pl.col("start_slot") - origin_time).dt.total_minutes() // 5).cast(
+                pl.Int64
+            ),
+            end=((pl.col("end_slot") - origin_time).dt.total_minutes() // 5).cast(
+                pl.Int64
+            ),
+        )
+        .sort("start", "origin")
+        .with_columns(rank=pl.int_range(pl.len()).over("start", "origin"))
+        .collect()
+    )
+    start = trips["start"].to_numpy()
+    end = trips["end"].to_numpy()
+    destination = trips["destination"].to_numpy()
+    first_slot = int((window_start - origin_time).total_seconds() // 300)
+    return TripSlots(
+        origin=trips["origin"].to_numpy(),
+        destination=destination,
+        end_slot=end,
+        rank=trips["rank"].to_numpy(),
+        arrives=(destination >= 0) & (end >= start) & (end - start < SLOTS_PER_DAY),
+        bounds=np.searchsorted(
+            start, first_slot + np.arange(days * SLOTS_PER_DAY + 1), side="left"
+        ),
+        first_slot=first_slot,
+    )
+
+
+def simulate_network_slots(
+    stock: np.ndarray,
+    capacity: np.ndarray,
+    starts: np.ndarray,
+    ends: np.ndarray,
+    trips: TripSlots,
+    cancelled_arrivals: np.ndarray,
+    first_slot: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """`simulate_slots`, except that a rider who finds the start station empty never arrives.
+
+    In each slot, riders leave first; those the station cannot serve are turned away, and the
+    trips they would have made are struck from their destinations' arrivals. `cancelled_arrivals`
+    [policy, station, slot of the day] holds the struck arrivals still to come, carries over from
+    one call to the next, and is updated in place. `first_slot` numbers the first slot the same
+    way as `trips`.
+    """
+    stock = stock.astype(np.int32)
+    slots = starts.shape[1]
+    empty = np.zeros((*stock.shape, slots), dtype=np.int16)
+    full = np.zeros_like(empty)
+    for k in range(slots):
+        slot = first_slot + k
+        leaving = starts[:, k].astype(np.int32)
+        lost = np.maximum(leaving - stock, 0)
+        stock = stock - leaving + lost
+        empty[:, :, k] = lost
+        low = trips.bounds[slot - trips.first_slot]
+        high = trips.bounds[slot - trips.first_slot + 1]
+        if high > low and lost.any():
+            struck = (trips.rank[None, low:high] < lost[:, trips.origin[low:high]]) & (
+                trips.arrives[None, low:high]
+            )
+            policy, trip = np.nonzero(struck)
+            trip += low
+            np.add.at(
+                cancelled_arrivals,
+                (policy, trips.destination[trip], trips.end_slot[trip] % SLOTS_PER_DAY),
+                1,
+            )
+        column = slot % SLOTS_PER_DAY
+        stock = stock + np.maximum(ends[:, k] - cancelled_arrivals[:, :, column], 0)
+        cancelled_arrivals[:, :, column] = 0
+        full[:, :, k] = np.maximum(stock - capacity, 0)
+        stock = np.minimum(stock, capacity)
+    return stock, empty, full

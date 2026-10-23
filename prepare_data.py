@@ -4,6 +4,8 @@ Writes to data/processed/:
 - bins/YYYYMM.parquet: starts and ends at each station in each 5-minute slot that had any
 - stations.parquet: one row per public station, with name, coordinates and docks
 - routes_dev.parquet: trips between each pair of stations in the development year, by time of day
+- trips/YYYYMM.parquet: every trip from a public station, with its start and end slot, for the
+  simulation in which a rider turned away at the start never arrives at the end
 
 Runs one month at a time, so memory stays near one month of trips. Pass months as YYYYMM
 (`python prepare_data.py 202510`) to build only those.
@@ -73,6 +75,7 @@ trips = (
 
 wanted = set(sys.argv[1:])
 (PROCESSED / "bins").mkdir(parents=True, exist_ok=True)
+(PROCESSED / "trips").mkdir(parents=True, exist_ok=True)
 station_points: list[pl.DataFrame] = []
 route_months: list[pl.DataFrame] = []
 for month_start, next_month_start in pairwise(month_starts):
@@ -145,6 +148,19 @@ for month_start, next_month_start in pairwise(month_starts):
             pl.col("lng").median(),
         )
         .collect(engine="streaming")
+    )
+
+    (
+        trips.filter(started_in_month)
+        .drop_nulls("start_station_id")
+        .select(
+            "start_station_id",
+            "end_station_id",
+            start_slot=pl.col("started_at").dt.truncate("5m"),
+            end_slot=pl.col("ended_at").dt.truncate("5m"),
+        )
+        .collect(engine="streaming")
+        .write_parquet(PROCESSED / "trips" / f"{label}.parquet")
     )
 
     if month_start < TEST_START:

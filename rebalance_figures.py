@@ -1,6 +1,7 @@
 # %% [markdown]
-# # Figures 8 to 12 and the numbers behind the recommendation
+# # Figures 8 to 13 and the numbers behind the recommendation
 # Reads the test-year simulation from `rebalance.py test`, so nothing here is fitted or chosen.
+# The independent-station run (`--independent`) is read only for the comparison table.
 
 # %%
 import os
@@ -8,6 +9,7 @@ import os
 os.environ["POLARS_MAX_THREADS"] = "6"
 
 from datetime import date
+from typing import cast
 from pathlib import Path
 
 import numpy as np
@@ -23,12 +25,16 @@ from plotnine import (
     geom_point,
     geom_step,
     geom_text,
+    geom_vline,
     ggplot,
+    guide_legend,
+    guides,
     labs,
     scale_color_gradient2,
     scale_color_manual,
     scale_size_area,
     scale_x_continuous,
+    scale_x_date,
     scale_y_continuous,
     theme,
 )
@@ -42,17 +48,20 @@ from lib.chart_style import (
     LIGHT_CONTEXT,
     LOSING_RED,
     MAP_THEME,
-    ORANGE,
     REPORT_THEME,
     on_map,
 )
+from lib.fetching import fetch_rebalanced_bikes
 from lib.geography import land_outline, station_areas
 from lib.rebalancing import SLOTS_PER_DAY, load_day_slots, simulate_slots
 
 PROCESSED = Path("data/processed")
 BOUNDARIES = Path("data/raw/boundaries")
-RECOMMENDED = "budget-3000-midday-14-50"
+# the schedule chosen on the development year, and its night budget alone
+RECOMMENDED = "budget-3000-midday-14-100"
 NIGHT_ONLY = "budget-3000"
+NIGHT_BUDGET = f"{int(NIGHT_ONLY.split('-')[1]):,}"
+MIDDAY_LABEL = f"budget {NIGHT_BUDGET} + 14:00 visits"
 
 simulation = np.load(PROCESSED / "simulation-test.npz")
 policies = simulation["policy"].tolist()
@@ -67,35 +76,72 @@ stations = station_areas(
 stations = stations.sort("station_id")
 land = land_outline(BOUNDARIES)
 
+independent = pl.read_parquet(PROCESSED / "simulation-test-independent-summary.parquet")
 with pl.Config(tbl_rows=30, float_precision=0, fmt_str_lengths=30):
-    print(summary.select("policy", "shortages_per_day", "bikes_moved_per_day"))
+    print(
+        summary.select(
+            "policy",
+            "shortages_per_day",
+            "empty_per_day",
+            "full_per_day",
+            "bikes_moved_per_day",
+            "shortages_per_100_trips",
+        ).join(
+            independent.select("policy", independent_shortages="shortages_per_day"),
+            on="policy",
+            how="left",
+        )
+    )
 
 # %% [markdown]
 # ## Figure 9: shortages against bikes moved, every schedule on the test year
 
 # %%
 labels = {
-    "none": "no rebalancing",
     "half": "every station reset to half full",
-    "band": "every station moved into its band (= budget 9,000)",
+    "band": "every station moved into its band (budget 9,000)",
     "oracle": "the band known in advance (bound)",
 }
-points = summary.with_columns(
+points = summary.filter(pl.col("policy") != "none").with_columns(
     kind=pl.when(pl.col("family") == "budget")
     .then(pl.lit("nightly budget"))
     .when(pl.col("family").str.contains("midday"))
-    .then(pl.lit("budget 3,000 + 14:00 visits"))
+    .then(pl.lit(MIDDAY_LABEL))
     .otherwise(pl.lit("simple rule"))
 )
-budget_curve = points.filter(pl.col("kind") != "simple rule").sort(
+# the chart stops a fifth above the half-full reset; schedules above that are named in a note
+half_shortages = cast(
+    float, summary.filter(pl.col("policy") == "half")["shortages_per_day"].item()
+)
+top = half_shortages * 1.2
+off_chart = summary.filter(pl.col("shortages_per_day") > top).sort(
+    "shortages_per_day", descending=True
+)
+off_chart_note = "above the chart:\n" + "\n".join(
+    f"{'no rebalancing' if name == 'none' else name.replace('budget-', 'budget ')} {value:,.0f}"
+    for name, value in off_chart.select("policy", "shortages_per_day").iter_rows()
+)
+points = points.filter(pl.col("shortages_per_day") <= top)
+# what Citi Bike reports moving per day over the test-year months with a report
+reported = fetch_rebalanced_bikes(Path("data/raw")).filter(pl.col("month") >= days[0])
+reported_per_day = reported.select(
+    pl.col("bikes_rebalanced").sum()
+    / pl.col("month").dt.month_end().dt.day().cast(pl.Int64).sum()
+).item()
+budget_curve = points.filter(pl.col("kind") == "nightly budget").sort(
     "bikes_moved_per_day"
 )
+midday_curve = pl.concat(
+    [
+        points.filter(pl.col("policy") == NIGHT_ONLY),
+        points.filter(pl.col("kind") == MIDDAY_LABEL).sort("bikes_moved_per_day"),
+    ]
+).with_columns(kind=pl.lit(MIDDAY_LABEL))
 # where each rule's name sits relative to its point, so no label leaves the panel or hits a curve
 label_place = {
-    "none": ("left", 60, 170),
-    "half": ("right", -60, 170),
-    "band": ("left", 60, 170),
-    "oracle": ("left", 70, -150),
+    "half": ("right", -70, 0.05 * top),
+    "band": ("left", 70, 0.05 * top),
+    "oracle": ("left", 70, -0.05 * top),
 }
 simple = points.filter(pl.col("kind") == "simple rule").with_columns(
     label=pl.col("policy").replace_strict(labels),
@@ -111,16 +157,13 @@ simple = points.filter(pl.col("kind") == "simple rule").with_columns(
         {name: place[2] for name, place in label_place.items()}
     ),
 )
-budget_labels = points.filter(
-    pl.col("policy").is_in(["budget-1000", "budget-3000"])
+budget_labels = budget_curve.filter(
+    pl.col("policy").is_in(["budget-1000", "budget-2000", NIGHT_ONLY])
 ).with_columns(
     label=pl.col("policy")
     .str.replace("budget-", "")
     .cast(pl.Int32)
-    .map_elements(lambda bikes: f"budget {bikes:,}", return_dtype=pl.String)
-)
-midday_labels = points.filter(pl.col("policy").str.ends_with("-400")).with_columns(
-    label=pl.lit("400 stations")
+    .map_elements(lambda bikes: f"{bikes:,}", return_dtype=pl.String)
 )
 recommended = points.filter(pl.col("policy") == RECOMMENDED)
 
@@ -128,18 +171,12 @@ figure_8 = (
     ggplot()
     + geom_path(
         aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
-        data=budget_curve.filter(pl.col("kind") == "nightly budget"),
+        data=budget_curve,
         size=0.8,
     )
     + geom_path(
         aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
-        data=pl.concat(
-            [
-                points.filter(pl.col("policy") == NIGHT_ONLY),
-                budget_curve.filter(pl.col("kind") == "budget 3,000 + 14:00 visits"),
-            ],
-            how="diagonal",
-        ).with_columns(kind=pl.lit("budget 3,000 + 14:00 visits")),
+        data=midday_curve,
         size=0.8,
     )
     + geom_point(
@@ -147,26 +184,20 @@ figure_8 = (
         data=budget_curve,
         size=1.4,
     )
+    + geom_point(
+        aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
+        data=midday_curve.tail(-1),
+        size=1.4,
+    )
     + geom_text(
         aes("bikes_moved_per_day", "shortages_per_day", label="label"),
         data=budget_labels,
         size=6,
-        nudge_y=-140,
-        color=DARK_BLUE,
-    )
-    + geom_text(
-        aes("bikes_moved_per_day", "shortages_per_day", label="label"),
-        data=midday_labels,
-        size=6,
-        nudge_x=60,
-        ha="left",
-        color=ORANGE,
+        nudge_y=0.045 * top,
+        color=BLUE,
     )
     + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day"),
-        data=simple,
-        color=INK,
-        size=2,
+        aes("bikes_moved_per_day", "shortages_per_day"), data=simple, color=INK, size=2
     )
     + geom_text(
         aes("label_x", "label_y", label="label", ha="ha"),
@@ -177,40 +208,60 @@ figure_8 = (
     + geom_point(
         aes("bikes_moved_per_day", "shortages_per_day"),
         data=recommended,
-        color=ORANGE,
-        size=4,
+        color=DARK_BLUE,
+        size=4.5,
         fill="none",
         stroke=1,
     )
     + annotate(
         "text",
-        x=float(recommended["bikes_moved_per_day"].item()),
-        y=float(recommended["shortages_per_day"].item()) - 420,
-        label="recommended: budget 3,000\n+ 50 stations at 14:00",
-        ha="center",
+        x=float(recommended["bikes_moved_per_day"].item()) + 60,
+        y=float(recommended["shortages_per_day"].item()) - 0.12 * top,
+        label=f"recommended: budget {NIGHT_BUDGET}\n+ 100 stations at 14:00",
+        ha="left",
         size=7,
-        color=ORANGE,
+        color=DARK_BLUE,
         fontweight="bold",
     )
-    + scale_color_manual(
-        values={"nightly budget": BLUE, "budget 3,000 + 14:00 visits": ORANGE}
+    + annotate(
+        "text",
+        x=30,
+        y=top * 0.99,
+        label=off_chart_note,
+        ha="left",
+        va="top",
+        size=6.5,
+        color=INK,
     )
+    + geom_vline(
+        xintercept=reported_per_day, color=CONTEXT, linetype="dashed", size=0.4
+    )
+    + annotate(
+        "text",
+        x=reported_per_day + 50,
+        y=top * 0.62,
+        label=f"Citi Bike's reported moves,\n{reported_per_day:,.0f} a day",
+        ha="left",
+        size=6.5,
+        color="#55544f",
+    )
+    + scale_color_manual(values={"nightly budget": BLUE, MIDDAY_LABEL: DARK_BLUE})
     + scale_x_continuous(
         labels=lambda values: [f"{float(value):,.0f}" for value in values]
     )
     + scale_y_continuous(
         labels=lambda values: [f"{float(value):,.0f}" for value in values],
-        limits=(0, 4500),
+        limits=(0, top),
     )
     + labs(
         title="Moving fewer bikes, to the right stations, prevents more shortages than moving many",
-        subtitle="Test year, October 2025 to September 2026. Budget: bikes loaded or unloaded per night. Orange: stations visited at 14:00",
+        subtitle="Test year, October 2025 to September 2026. Blue labels: night budget in bikes loaded or unloaded",
         x="bikes moved per day",
-        y="riders finding a station empty or full, per day",
+        y="riders turned away per day",
         color="",
     )
     + REPORT_THEME
-    + theme(figure_size=(6.7, 3.6))
+    + theme(figure_size=(6.7, 3.5))
 )
 figure_8.save(FIGURES / "fig9-tradeoff.png", verbose=False)
 
@@ -325,8 +376,6 @@ figure_9 = (
         legend_position="right",
         plot_title=element_text(size=8.5),
         legend_box="vertical",
-        legend_key_height=40,
-        legend_key_width=6,
     )
 )
 figure_9.save(FIGURES / "fig10-where-vans-go.png", verbose=False)
@@ -373,9 +422,8 @@ by_slot = simulation["shortages_by_slot"]
 slot_hours = (np.arange(SLOTS_PER_DAY) // 12 + 4) % 24
 hour_labels = {
     "half": "reset to half",
-    "none": "no rebalancing",
     NIGHT_ONLY: "budget, nights only",
-    RECOMMENDED: "budget + 14:00 visits",
+    RECOMMENDED: "recommended",
     "oracle": "band known in advance",
 }
 by_hour = pl.concat(
@@ -405,25 +453,115 @@ figure_10 = (
     + scale_color_manual(
         values={
             "reset to half": CONTEXT,
-            "no rebalancing": LIGHT_CONTEXT,
             "budget, nights only": BLUE,
-            "budget + 14:00 visits": ORANGE,
+            "recommended": DARK_BLUE,
             "band known in advance": INK,
         }
     )
+    + guides(color=guide_legend(ncol=2))
     + scale_x_continuous(
-        breaks=range(0, 24, 3), labels=[f"{hour:02d}:00" for hour in range(0, 24, 3)]
+        breaks=range(0, 24, 6), labels=[f"{hour:02d}:00" for hour in range(0, 24, 6)]
     )
     + labs(
-        title="Half-full stations fail in the morning rush; the budget's leftovers come in the evening",
-        x="hour of the day",
-        y="shortages per hour",
+        title="Half full fails in the morning rush",
+        subtitle="Riders turned away per hour, test-year average",
+        x="",
+        y="per hour",
         color="",
     )
     + REPORT_THEME
-    + theme(figure_size=(6.7, 2.8))
+    + theme(figure_size=(3.35, 2.9), plot_title=element_text(size=8.5))
 )
 figure_10.save(FIGURES / "fig12-shortages-by-hour.png", verbose=False)
+
+# %% [markdown]
+# ## Figure 13: bikes moved per month against what Citi Bike reports it moved
+
+# %%
+moved_by_day = (
+    np.maximum(simulation["pickups_by_day"], simulation["dropoffs_by_day"])
+    + simulation["midday_moves_by_day"] / 2
+)
+months = pl.Series("month", days).dt.truncate("1mo")
+simulated = pl.concat(
+    [
+        pl.DataFrame(
+            {"month": months, "bikes": moved_by_day[position[name]], "source": label}
+        )
+        .group_by("month", "source")
+        .agg(pl.col("bikes").mean())
+        for name, label in (
+            ("half", "reset to half (simulated)"),
+            (RECOMMENDED, "recommended (simulated)"),
+        )
+    ]
+)
+monthly_moves = pl.concat(
+    [
+        simulated,
+        reported.select(
+            "month",
+            source=pl.lit("Citi Bike, reported"),
+            bikes=pl.col("bikes_rebalanced") / pl.col("month").dt.month_end().dt.day(),
+        ),
+    ]
+).with_columns(
+    pl.col("source").cast(
+        pl.Enum(
+            [
+                "Citi Bike, reported",
+                "recommended (simulated)",
+                "reset to half (simulated)",
+            ]
+        )
+    )
+)
+comparison = monthly_moves.pivot("source", index="month", values="bikes").drop_nulls()
+print(comparison.sort("month"))
+recommended_in_reported_months = pl.DataFrame(
+    {"month": months, "bikes": moved_by_day[position[RECOMMENDED]]}
+).filter(pl.col("month").is_in(reported["month"].implode()))
+print(
+    "test year, months with a report: Citi Bike moved",
+    round(reported_per_day),
+    "a day; recommended",
+    round(cast(float, recommended_in_reported_months["bikes"].mean())),
+    "; correlation across months",
+    round(
+        comparison.select(
+            pl.corr("Citi Bike, reported", "recommended (simulated)")
+        ).item(),
+        2,
+    ),
+)
+figure_13 = (
+    ggplot(monthly_moves.sort("month"), aes("month", "bikes", color="source"))
+    + geom_line(size=0.7)
+    + geom_point(size=1.2)
+    + scale_color_manual(
+        values={
+            "Citi Bike, reported": INK,
+            "recommended (simulated)": DARK_BLUE,
+            "reset to half (simulated)": CONTEXT,
+        }
+    )
+    + scale_x_date(date_labels="%b %y", date_breaks="3 months")
+    + scale_y_continuous(
+        labels=lambda values: [f"{float(value):,.0f}" for value in values],
+        limits=(0, cast(float, monthly_moves["bikes"].max()) * 1.08),
+    )
+    + guides(color=guide_legend(ncol=1))
+    + labs(
+        title="Our moves follow Citi Bike's own through the year",
+        subtitle="Bikes moved per day; May 2026 report not posted",
+        x="",
+        y="per day",
+        color="",
+    )
+    + REPORT_THEME
+    + theme(figure_size=(3.35, 2.9), plot_title=element_text(size=8.5))
+)
+figure_13.save(FIGURES / "fig13-moves-vs-reported.png", verbose=False)
 
 # %% [markdown]
 # ## Figure 8: one workday at three stations
@@ -442,7 +580,7 @@ print(
 examples = {
     "office": "Broadway & W 25 St",
     "home": "E 10 St & Ave A",
-    "swings past its docks": "9 Ave & W 33 St",
+    "too big for its docks": "9 Ave & W 33 St",
 }
 rows = [
     station_ids.index(stations.filter(pl.col("name") == name)["station_id"].item())

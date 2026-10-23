@@ -6,3 +6,5 @@ data/raw/tripdata.nosync/
 data/processed/
 __pycache__/
 .ruff_cache/
+# downloaded again by lib/fetching.py fetch_rebalanced_bikes, about 37 MB
+data/raw/operating-reports/
