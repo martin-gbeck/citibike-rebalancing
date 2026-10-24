@@ -9,6 +9,6 @@
   5. `rebalance.py dev`, then `rebalance.py test`: the schedule simulation, in which a rider turned away at an empty station never arrives. Dev about 3 min, test about 2 min, 1.6 GB. Every setting is chosen on dev; the test run only scores. `--independent` runs the simpler model (stations on their own) for the comparison in the report, about 30 s
   6. `rebalance_figures.py`: figures 8 to 13 from the test run, including the comparison with Citi Bike's monthly operating reports (parsed with poppler's `pdftotext`)
   7. `export_source.sh`: the source code as HTML for the submission zip, into `submission/source/`
-- Figures land in `figures/` and are copied into the report at `report/draft/figures/`.
+- Figures land in `figures/` and are copied into the report at `report/final/figures/`.
 - Memory: anything grouped by station and time runs one month at a time; a single pass over both years took 15 to 20 GB. Polars is capped at 6 threads.
 - The trip Parquet files sit in `data/raw/tripdata.nosync/` and the venv in `../.venv.nosync`, both out of iCloud sync on purpose; `../.venv` is a link to it.

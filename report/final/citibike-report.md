@@ -1,13 +1,10 @@
 ---
 title: "Fix the Night, Not the Day: Where and When Citi Bike Should Move Its Bikes"
-subtitle: "DAO2702X group project, team Jupyter. Draft 2, 23 October 2026"
+subtitle: "DAO2702X Programming for Business Analytics, group project report. Team Jupyter"
 fontsize: 10pt
 margin: 18mm
+header-includes: \usepackage{xurl}
 ---
-
-::: key
-**Draft status.** Every section, figure and number is in place, and every number comes from the scripts in `citibike-rebalancing/`. Still open: the team's names, and the group's read on which charts to keep. This box comes out before submission.
-:::
 
 # 1. The business problem
 
@@ -79,7 +76,7 @@ A linear regression of the log of each day's trips on the weather in riding hour
 
 Warmth brings riders up to about 22 °C: each 5 °C more adds 21% trips below that point, while above it, more heat costs 6%. Each wet hour in the day costs 6.6% of trips, so a day with five wet hours loses about a third. Five centimetres of snow in the last three days costs 20%, and the week from 24 December to 1 January loses 45% (Figure 7). The model has no time trend: fitted on one year, a trend picks up the season rather than growth, and adding one drops the test-year R² from 0.87 to 0.71.
 
-Each station's starting level comes from its own last 10 comparable days, workdays or weekends. For each past day we record two numbers: the *need*, the most bikes the station fell below its 04:00 stock, and the *room*, its docks minus the most it rose above that stock. A station starting that day with x bikes would have turned away need minus x riders if x was below the need, and x minus room riders if x was above the room. Added over the 10 days, that total is lowest for any x between the 10th and 11th smallest of the 20 numbers. We call that range the station's **target band**. A station already inside its band needs no visit; one outside it is moved toward the nearest edge.
+Each station's starting level comes from its own last 10 comparable days, workdays or weekends. For each past day we record two numbers: the *need*, the most bikes the station fell below its 04:00 stock, and the *room*, its docks minus the most it rose above that stock. A station starting that day with x bikes would have turned away need minus x riders if x was below the need, and x minus room riders if x was above the room. Added over the 10 days, that total is lowest for any x between the 10th and 11th smallest of the 20 numbers. We call that range the station's **target band**. It is the overnight-stock rule of Raviv and Kolka (2013), with the station's own recent days in place of a fitted demand model. A station already inside its band needs no visit; one outside it is moved toward the nearest edge.
 
 The development year settled every setting before the test year was opened:
 
@@ -131,7 +128,7 @@ Four results follow from Figure 9 and the table.
 3. **The 14:00 visit is the best use of extra bikes.** Visiting 100 stations prevents 166 more shortages a day for 671 more bikes moved, 0.25 per bike. Raising the night budget from 3,000 to 4,000 instead prevents 0.06 per bike.
 4. **Forecasting is where the remaining gain is.** With perfect knowledge of each day the same network would turn away 870 riders a day. The gap between 1,779 and 870 comes from day-to-day noise (Figure 5), not from the rule.
 
-**What treating stations separately would have hidden.** A simpler simulation lets every rider arrive at their destination even if they were turned away at the start. In that version no rebalancing turns away only 2,173 riders a day, fewer than the half-full reset (4,230). That result does not survive: once lost riders also fail to arrive, stations downstream stop refilling and no rebalancing reaches 18,189. The schedules that move bikes keep the same order in both versions: the half-full reset worst, then the band rule, the night budget, and the budget with 14:00 visits best of the four (1,530 riders a day in the simple version, 1,779 in ours).
+**Why a lost rider must also fail to arrive.** A simpler simulation lets every rider arrive at their destination even if they were turned away at the start. In that version no rebalancing turns away only 2,173 riders a day, fewer than the half-full reset (4,230). That result does not survive: once lost riders also fail to arrive, stations downstream stop refilling and no rebalancing reaches 18,189. The schedules that move bikes keep the same order in both versions: the half-full reset worst, then the band rule, the night budget, and the budget with 14:00 visits best of the four (1,530 riders a day in the simple version, 1,779 in ours).
 
 # 7. Where, when, and against Citi Bike's own operations
 
@@ -171,11 +168,11 @@ The shortage counts are lower bounds, since riders who gave up left no record. A
 
 Chung, H., Freund, D., & Shmoys, D. B. (2018). Bike Angels: An analysis of Citi Bike's incentive program. *Proceedings of the ACM SIGCAS Conference on Computing and Sustainable Societies (COMPASS)*.
 
-Citi Bike. (2026). System data: trip histories, October 2024 to September 2026. https://citibikenyc.com/system-data
+Citi Bike. (2026). System data: trip histories, October 2024 to September 2026. <https://citibikenyc.com/system-data>
 
-Citi Bike. (2026). Monthly operating reports, January 2025 to September 2026. https://citibikenyc.com/system-data/operating-reports
+Citi Bike. (2026). Monthly operating reports, January 2025 to September 2026. <https://citibikenyc.com/system-data/operating-reports>
 
-Citi Bike. (2026). General Bikeshare Feed Specification, station information, retrieved 22 October 2026. https://gbfs.citibikenyc.com/gbfs/en/station_information.json
+Citi Bike. (2026). General Bikeshare Feed Specification, station information, retrieved 22 October 2026. <https://gbfs.citibikenyc.com/gbfs/en/station_information.json>
 
 Gammelli, D., Wang, Y., Prak, D., Rodrigues, F., Minner, S., & Pereira, F. C. (2021). Predictive and prescriptive performance of bike-sharing demand forecasts for inventory management. arXiv:2108.00858.
 
@@ -185,7 +182,7 @@ NYC Department of Transportation. (2025). Citi Bike expansion plan presentation,
 
 O'Mahony, E., & Shmoys, D. B. (2015). Data analysis and optimization for (Citi)Bike sharing. *Proceedings of the AAAI Conference on Artificial Intelligence*, 29(1).
 
-Open-Meteo. (2026). Historical weather API, hourly archive for Central Park, New York. https://open-meteo.com
+Open-Meteo. (2026). Historical weather API, hourly archive for Central Park, New York. <https://open-meteo.com>
 
 Raviv, T., & Kolka, O. (2013). Optimal inventory management of a bike-sharing station. *IIE Transactions*, 45(10), 1077-1093.
 
