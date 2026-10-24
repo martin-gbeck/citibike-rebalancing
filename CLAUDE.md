@@ -7,6 +7,7 @@
   3. `explore.py`: figures 1 to 5 (dev year only)
   4. `demand_model.py`: daily demand regression, figures 6 and 7
   5. `rebalance.py dev`, then `rebalance.py test`: the schedule simulation, in which a rider turned away at an empty station never arrives. Dev about 3 min, test about 2 min, 1.6 GB. Every setting is chosen on dev; the test run only scores. `--independent` runs the simpler model (stations on their own) for the comparison in the report, about 30 s
+     `--rust` runs the network replay in the Rust extension in `rust_sim/` (build once: `uvx maturin develop --release --uv` there, with `VIRTUAL_ENV` set to the progforbiz venv). Same results to the last number; the test year takes 52 s instead of 96, the replay itself 6 s instead of 48. Not part of the hand-in.
   6. `rebalance_figures.py`: figures 8 to 13 from the test run, including the comparison with Citi Bike's monthly operating reports (parsed with poppler's `pdftotext`)
   7. `export_source.sh`: the source code as HTML for the submission zip, into `submission/source/`
 - Figures land in `figures/`. The report is the Word file `report/final/citibike-report-editable.docx` (the group edits it; no Markdown or PDF copy is kept). To put redrawn figures in without touching its text: close it in Word, then `../.venv/bin/python report/swap_figures.py report/final/citibike-report-editable.docx figures`.

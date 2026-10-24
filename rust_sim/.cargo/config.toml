@@ -1,0 +1,3 @@
+# build output stays out of iCloud, which would otherwise sync gigabytes of intermediate files
+[build]
+target-dir = "/Users/mb/.cache/citibike-sim-target"

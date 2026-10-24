@@ -295,3 +295,35 @@ def simulate_network_slots(
         full[:, :, k] = np.maximum(stock - capacity, 0)
         stock = np.minimum(stock, capacity)
     return stock, empty, full
+
+
+def simulate_network_slots_rust(
+    stock: np.ndarray,
+    capacity: np.ndarray,
+    starts: np.ndarray,
+    ends: np.ndarray,
+    trips: TripSlots,
+    cancelled_arrivals: np.ndarray,
+    first_slot: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """`simulate_network_slots` run by the Rust extension in `rust_sim/`, the schedules in parallel.
+
+    Build it once into the venv first: `uvx maturin develop --release --uv` from `rust_sim/`.
+    """
+    from citibike_sim import simulate_network_slots as simulate  # ty: ignore[unresolved-import]
+
+    return simulate(
+        np.ascontiguousarray(stock, dtype=np.int32),
+        np.ascontiguousarray(capacity, dtype=np.int32),
+        np.ascontiguousarray(starts, dtype=np.int16),
+        np.ascontiguousarray(ends, dtype=np.int16),
+        trips.origin.astype(np.int32),
+        trips.destination.astype(np.int32),
+        trips.end_slot.astype(np.int64),
+        trips.rank.astype(np.int64),
+        trips.arrives.astype(np.bool_),
+        trips.bounds.astype(np.int64),
+        trips.first_slot,
+        cancelled_arrivals,
+        first_slot,
+    )

@@ -1,0 +1,17 @@
+[package]
+name = "citibike_sim"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "citibike_sim"
+crate-type = ["cdylib"]
+
+[dependencies]
+numpy = "0.25"
+pyo3 = { version = "0.25", features = ["extension-module"] }
+rayon = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1

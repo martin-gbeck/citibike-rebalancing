@@ -11,7 +11,8 @@
 # schedules once on the test year (October 2025 to September 2026). Each writes
 # `data/processed/simulation-<year>.npz`, about 3 minutes and 1.5 GB. `--independent` treats every
 # station on its own instead, so a turned-away rider still arrives, the simpler model that
-# flatters schedules which move few bikes.
+# flatters schedules which move few bikes. `--rust` runs the network replay in the Rust extension
+# in `rust_sim/` and writes `simulation-<year>-rust.npz`, which should match the Python run.
 
 # %%
 import os
@@ -37,6 +38,7 @@ from lib.rebalancing import (
     load_trip_slots,
     shortage_table,
     simulate_network_slots,
+    simulate_network_slots_rust,
     simulate_slots,
     slot_of_hour,
     spend_budget,
@@ -84,6 +86,8 @@ year = next(
     (argument for argument in sys.argv[1:] if not argument.startswith("--")), "dev"
 )
 network = "--independent" not in sys.argv
+rust = "--rust" in sys.argv
+suffix = ("" if network else "-independent") + ("-rust" if rust else "")
 # bikes loaded or unloaded per night for the budget rule, and stations visited at midday
 BUDGETS = (250, 500, 1000, 2000, 3000, 4000, 6000, 9000)
 MIDDAY_STATIONS = (25, 50, 100, 200, 400)
@@ -371,7 +375,8 @@ while month_first <= last_day:
                     bikes_out_by_station[p, chosen] += np.maximum(-midday_move, 0)
                     stock[p, chosen] = target[chosen]
             if trip_slots is not None:
-                stock, empty, full = simulate_network_slots(
+                simulate = simulate_network_slots_rust if rust else simulate_network_slots
+                stock, empty, full = simulate(
                     stock,
                     capacity,
                     starts[:, offset, segment_start:segment_end],
@@ -424,7 +429,7 @@ with pl.Config(tbl_rows=40, tbl_cols=-1, tbl_width_chars=200, float_precision=1)
     print(summary)
 
 np.savez_compressed(
-    PROCESSED / f"simulation-{year}{'' if network else '-independent'}.npz",
+    PROCESSED / f"simulation-{year}{suffix}.npz",
     policy=np.array([policy.name for policy in policies]),
     family=np.array([policy.family for policy in policies]),
     station_id=np.array(station_ids),
@@ -446,5 +451,5 @@ np.savez_compressed(
     capacity=capacity,
 )
 summary.write_parquet(
-    PROCESSED / f"simulation-{year}{'' if network else '-independent'}-summary.parquet"
+    PROCESSED / f"simulation-{year}{suffix}-summary.parquet"
 )
