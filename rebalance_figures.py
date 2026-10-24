@@ -19,11 +19,11 @@ from plotnine import (
     annotate,
     element_text,
     facet_wrap,
+    geom_area,
     geom_hline,
     geom_line,
     geom_path,
     geom_point,
-    geom_step,
     geom_text,
     geom_vline,
     ggplot,
@@ -32,6 +32,7 @@ from plotnine import (
     labs,
     scale_color_gradient2,
     scale_color_manual,
+    scale_linetype_manual,
     scale_size_area,
     scale_x_continuous,
     scale_x_date,
@@ -44,10 +45,13 @@ from lib.chart_style import (
     CONTEXT,
     DARK_BLUE,
     FIGURES,
+    FONT,
     INK,
     LIGHT_CONTEXT,
     LOSING_RED,
     MAP_THEME,
+    MUTED,
+    ORANGE,
     REPORT_THEME,
     on_map,
 )
@@ -100,7 +104,7 @@ with pl.Config(tbl_rows=30, float_precision=0, fmt_str_lengths=30):
 labels = {
     "half": "every station reset to half full",
     "band": "every station moved into its band (budget 9,000)",
-    "oracle": "the band known in advance (bound)",
+    "oracle": "band known in advance (ceiling)",
 }
 points = summary.filter(pl.col("policy") != "none").with_columns(
     kind=pl.when(pl.col("family") == "budget")
@@ -141,7 +145,7 @@ midday_curve = pl.concat(
 label_place = {
     "half": ("right", -70, 0.05 * top),
     "band": ("left", 70, 0.05 * top),
-    "oracle": ("left", 70, -0.05 * top),
+    "oracle": ("left", -450, -0.08 * top),
 }
 simple = points.filter(pl.col("kind") == "simple rule").with_columns(
     label=pl.col("policy").replace_strict(labels),
@@ -193,25 +197,33 @@ figure_8 = (
         aes("bikes_moved_per_day", "shortages_per_day", label="label"),
         data=budget_labels,
         size=6,
-        nudge_y=0.045 * top,
-        color=BLUE,
+        nudge_y=0.05 * top,
+        color=MUTED,
+        family=FONT,
     )
     + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day"), data=simple, color=INK, size=2
+        aes("bikes_moved_per_day", "shortages_per_day"), data=simple, color=MUTED, size=2.2
     )
     + geom_text(
         aes("label_x", "label_y", label="label", ha="ha"),
         data=simple,
         size=6.5,
-        color=INK,
+        color=MUTED,
+        family=FONT,
     )
     + geom_point(
         aes("bikes_moved_per_day", "shortages_per_day"),
         data=recommended,
         color=DARK_BLUE,
-        size=4.5,
-        fill="none",
-        stroke=1,
+        size=5.5,
+        fill="white",
+        stroke=1.2,
+    )
+    + geom_point(
+        aes("bikes_moved_per_day", "shortages_per_day"),
+        data=recommended,
+        color=DARK_BLUE,
+        size=2,
     )
     + annotate(
         "text",
@@ -220,8 +232,9 @@ figure_8 = (
         label=f"recommended: budget {NIGHT_BUDGET}\n+ 100 stations at 14:00",
         ha="left",
         size=7,
-        color=DARK_BLUE,
+        color=INK,
         fontweight="bold",
+        family=FONT,
     )
     + annotate(
         "text",
@@ -230,8 +243,9 @@ figure_8 = (
         label=off_chart_note,
         ha="left",
         va="top",
-        size=6.5,
-        color=INK,
+        size=6,
+        color=MUTED,
+        family=FONT,
     )
     + geom_vline(
         xintercept=reported_per_day, color=CONTEXT, linetype="dashed", size=0.4
@@ -243,7 +257,8 @@ figure_8 = (
         label=f"Citi Bike's reported moves,\n{reported_per_day:,.0f} a day",
         ha="left",
         size=6.5,
-        color="#55544f",
+        color=MUTED,
+        family=FONT,
     )
     + scale_color_manual(values={"nightly budget": BLUE, MIDDAY_LABEL: DARK_BLUE})
     + scale_x_continuous(
@@ -255,7 +270,7 @@ figure_8 = (
     )
     + labs(
         title="Moving fewer bikes, to the right stations, prevents more shortages than moving many",
-        subtitle="Test year, October 2025 to September 2026. Blue labels: night budget in bikes loaded or unloaded",
+        subtitle="Test year, October 2025 to September 2026. Numbers on the curve: night budget in bikes loaded or unloaded",
         x="bikes moved per day",
         y="riders turned away per day",
         color="",
@@ -350,13 +365,13 @@ figure_9 = (
         data=per_night.filter(pl.col("handled") > 0.5)
         .with_columns(net_dropped=(pl.col("dropped") - pl.col("picked")).clip(-4, 4))
         .sort("handled"),
-        alpha=0.8,
+        alpha=0.85,
         stroke=0,
     )
     + scale_size_area(max_size=4, breaks=[2, 10, 20])
     + scale_color_gradient2(
         low=LOSING_RED,
-        mid="#8a8f99",
+        mid=CONTEXT,
         high=BLUE,
         midpoint=0,
         limits=(-4, 4),
@@ -448,17 +463,32 @@ print(
 )
 
 figure_10 = (
-    ggplot(by_hour, aes("hour", "shortages", color="schedule"))
-    + geom_step(size=0.7, direction="mid")
+    ggplot(by_hour, aes("hour", "shortages", color="schedule", linetype="schedule"))
+    + geom_area(
+        data=by_hour.filter(pl.col("schedule") == "recommended"),
+        fill=BLUE,
+        alpha=0.12,
+        color="none",
+        show_legend=False,
+    )
+    + geom_line(size=0.8)
+    + scale_linetype_manual(
+        values={
+            "reset to half": "solid",
+            "budget, nights only": "solid",
+            "recommended": "solid",
+            "band known in advance": "dashed",
+        }
+    )
     + scale_color_manual(
         values={
             "reset to half": CONTEXT,
-            "budget, nights only": BLUE,
-            "recommended": DARK_BLUE,
+            "budget, nights only": ORANGE,
+            "recommended": BLUE,
             "band known in advance": INK,
         }
     )
-    + guides(color=guide_legend(ncol=2))
+    + guides(color=guide_legend(ncol=2), linetype=guide_legend(ncol=2))
     + scale_x_continuous(
         breaks=range(0, 24, 6), labels=[f"{hour:02d}:00" for hour in range(0, 24, 6)]
     )
@@ -468,6 +498,7 @@ figure_10 = (
         x="",
         y="per hour",
         color="",
+        linetype="",
     )
     + REPORT_THEME
     + theme(figure_size=(3.35, 2.9), plot_title=element_text(size=8.5))
@@ -536,12 +567,12 @@ print(
 )
 figure_13 = (
     ggplot(monthly_moves.sort("month"), aes("month", "bikes", color="source"))
-    + geom_line(size=0.7)
-    + geom_point(size=1.2)
+    + geom_line(size=0.8)
+    + geom_point(size=1.6, fill="white", stroke=0.8, shape="o")
     + scale_color_manual(
         values={
             "Citi Bike, reported": INK,
-            "recommended (simulated)": DARK_BLUE,
+            "recommended (simulated)": BLUE,
             "reset to half (simulated)": CONTEXT,
         }
     )
@@ -580,7 +611,7 @@ print(
 examples = {
     "office": "Broadway & W 25 St",
     "home": "E 10 St & Ave A",
-    "too big for its docks": "9 Ave & W 33 St",
+    "swing beats its docks": "9 Ave & W 33 St",
 }
 rows = [
     station_ids.index(stations.filter(pl.col("name") == name)["station_id"].item())
@@ -608,9 +639,9 @@ for schedule, name in (("reset to half", "half"), ("recommended", RECOMMENDED)):
             pl.DataFrame(
                 {
                     "hours_from_4": np.arange(SLOTS_PER_DAY + 1) / 12,
-                    "stock": stock_path[:, k],
+                    "stock": stock_path[:, k].astype(np.float64),
                     "schedule": schedule,
-                    "station": f"{station_name} ({kind}, {capacity[rows[k]]} docks)",
+                    "station": f"{station_name}\n{kind}, {capacity[rows[k]]} docks",
                 }
             )
         )
@@ -628,8 +659,14 @@ figure_11 = (
     + geom_hline(
         aes(yintercept="docks"), data=docks, color=CONTEXT, linetype="dashed", size=0.4
     )
-    + geom_hline(yintercept=0, color=CONTEXT, size=0.4)
-    + geom_line(size=0.7)
+    + geom_area(
+        data=trace.filter(pl.col("schedule") == "recommended"),
+        fill=BLUE,
+        alpha=0.1,
+        color="none",
+        show_legend=False,
+    )
+    + geom_line(size=0.8)
     + facet_wrap("station", ncol=3, scales="free_y")
     + scale_color_manual(values={"reset to half": CONTEXT, "recommended": BLUE})
     + scale_x_continuous(
@@ -638,12 +675,12 @@ figure_11 = (
     )
     + labs(
         title="Half full is the wrong start at a commuter station, and some stations no start can save",
-        subtitle="Tuesday 12 May 2026. Dashed line: the station's docks; flat at the line or at zero means riders turned away",
+        subtitle="Bikes docked through Tuesday 12 May 2026. Dashed: the station's docks; a line flat at the dashes or at zero is turning riders away",
         x="",
         y="bikes in the station",
         color="",
     )
     + REPORT_THEME
-    + theme(figure_size=(6.7, 2.6), strip_text=element_text(size=6.5))
+    + theme(figure_size=(6.7, 2.9), strip_text=element_text(size=6.8))
 )
 figure_11.save(FIGURES / "fig8-one-day.png", verbose=False)

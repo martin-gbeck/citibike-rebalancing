@@ -19,20 +19,35 @@ import statsmodels.formula.api as smf
 from plotnine import (
     aes,
     annotate,
+    element_blank,
+    element_line,
     element_text,
-    geom_errorbarh,
     geom_line,
     geom_point,
+    geom_segment,
+    geom_text,
     geom_vline,
     ggplot,
     labs,
     scale_color_manual,
+    scale_size_manual,
+    scale_x_continuous,
     scale_x_date,
     scale_y_continuous,
     theme,
 )
 
-from lib.chart_style import BLUE, CONTEXT, FIGURES, INK, LOSING_RED, REPORT_THEME
+from lib.chart_style import (
+    BLUE,
+    CONTEXT,
+    FIGURES,
+    FONT,
+    INK,
+    LOSING_RED,
+    MUTED,
+    REPORT_THEME,
+    SHADE,
+)
 from lib.fetching import fetch_weather
 from lib.rebalancing import HOLIDAYS
 
@@ -127,33 +142,52 @@ long = days.select("date", actual="trips", model="predicted").unpivot(
 test_r2 = scores.filter(pl.col("is_test"))["r2"].item()
 figure_6 = (
     ggplot(long, aes("date", "trips", color="series"))
-    + geom_line(size=0.35)
-    + geom_vline(xintercept=TEST_START, color=INK, linetype="dashed", size=0.4)
+    + annotate(
+        "rect",
+        xmin=TEST_START,  # ty: ignore[invalid-argument-type]  plotnine takes dates on a date axis
+        xmax=date(2026, 9, 30),  # ty: ignore[invalid-argument-type]
+        ymin=0,
+        ymax=float("inf"),
+        fill=SHADE,
+    )
+    + geom_line(aes(size="series"))
     + annotate(
         "text",
-        x=date(2025, 9, 20),  # ty: ignore[invalid-argument-type]  plotnine takes dates on a date axis
+        x=date(2024, 10, 10),  # ty: ignore[invalid-argument-type]
         y=232_000,
-        label="fitted",
-        ha="right",
+        label="fitted here",
+        ha="left",
         size=6.5,
+        color=MUTED,
+        family=FONT,
     )
     + annotate(
         "text",
         x=date(2025, 10, 10),  # ty: ignore[invalid-argument-type]
         y=232_000,
-        label=f"scored: R² {test_r2:.2f}",
+        label=f"scored here: R² {test_r2:.2f}",
         ha="left",
         size=6.5,
+        color=INK,
+        fontweight="bold",
+        family=FONT,
     )
-    + scale_color_manual(values={"actual": CONTEXT, "model": BLUE})
+    + scale_color_manual(
+        values={"actual": CONTEXT, "model": BLUE},
+        labels={"actual": "actual trips", "model": "model"},
+    )
+    + scale_size_manual(values={"actual": 0.45, "model": 0.35}, guide=None)
     + scale_x_date(date_labels="%b %y", date_breaks="6 months")
     + scale_y_continuous(
-        labels=lambda values: [f"{float(value) / 1000:,.0f}k" for value in values]
+        labels=lambda values: [f"{float(value) / 1000:,.0f}k" for value in values],
+        limits=(0, 245_000),
+        expand=(0, 0),
     )
     + labs(
         title="Weather and calendar explain most daily swings",
+        subtitle="Trips per day; shaded: the test year",
         x="",
-        y="trips per day",
+        y="",
         color="",
     )
     + REPORT_THEME
@@ -201,21 +235,46 @@ effect_table = pl.DataFrame(rows).with_columns(
     direction=pl.when(pl.col("effect") >= 0)
     .then(pl.lit("more"))
     .otherwise(pl.lit("fewer")),
+    value_label=pl.format("{}%", pl.col("effect").round(0).cast(pl.Int32)).str.replace(
+        r"^(\d)", "+$1"
+    ),
+    # the number sits just past the end of the interval, on the side away from zero
+    label_x=pl.when(pl.col("effect") >= 0)
+    .then(pl.col("high") + 3)
+    .otherwise(pl.col("low") - 3),
+    label_ha=pl.when(pl.col("effect") >= 0).then(pl.lit("left")).otherwise(pl.lit("right")),
 )
 print(effect_table)
 
 figure_7 = (
     ggplot(effect_table, aes("effect", "factor", color="direction"))
-    + geom_vline(xintercept=0, color=CONTEXT, size=0.4)
-    + geom_errorbarh(aes(xmin="low", xmax="high"), height=0.3, size=0.5)
-    + geom_point(size=1.8)
+    + geom_vline(xintercept=0, color=CONTEXT, size=0.5)
+    + geom_segment(aes(x=0, xend="effect", yend="factor"), size=2.2, alpha=0.25)
+    + geom_segment(aes(x="low", xend="high", yend="factor"), size=0.7)
+    + geom_point(size=2.4)
+    + geom_text(
+        aes(label="value_label", x="label_x", ha="label_ha"),
+        size=6.5,
+        fontweight="bold",
+        color=INK,
+        family=FONT,
+    )
     + scale_color_manual(values={"more": BLUE, "fewer": LOSING_RED}, guide=None)
+    + scale_x_continuous(limits=(-62, 36), labels=lambda values: [f"{value:+.0f}%" if value else "0" for value in values])
     + labs(
         title="What moves a day's riding",
-        x="change in the day's trips, %",
+        subtitle="Change in the day's trips, with 95% intervals",
+        x="",
         y="",
     )
     + REPORT_THEME
-    + theme(figure_size=(3.35, 2.6), plot_title=element_text(size=8.5))
+    + theme(
+        figure_size=(3.35, 2.6),
+        plot_title=element_text(size=8.5),
+        axis_text_y=element_text(color=INK),
+        panel_grid_major_y=element_blank(),
+        panel_grid_major_x=element_line(color="#ebe9e4", size=0.4),
+        axis_line_x=element_blank(),
+    )
 )
 figure_7.save(FIGURES / "fig7-demand-effects.png", verbose=False)

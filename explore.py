@@ -14,17 +14,24 @@ from pathlib import Path
 import polars as pl
 from plotnine import (
     aes,
+    annotate,
+    element_blank,
     element_text,
     facet_wrap,
     geom_abline,
+    geom_area,
+    geom_bin_2d,
     geom_line,
     geom_point,
+    geom_text,
     geom_tile,
     ggplot,
     labs,
     scale_color_gradient2,
     scale_color_manual,
+    scale_fill_gradient,
     scale_fill_gradient2,
+    scale_size_continuous,
     scale_x_continuous,
     scale_y_continuous,
     theme,
@@ -33,10 +40,15 @@ from plotnine import (
 from lib.chart_style import (
     BLUE,
     CONTEXT,
+    DARK_BLUE,
     FIGURES,
+    FONT,
+    INK,
+    LIGHT_CONTEXT,
     LOSING_RED,
     NEUTRAL,
     ORANGE,
+    PALE_BLUE,
     REPORT_THEME,
     MAP_THEME,
     on_map,
@@ -111,23 +123,53 @@ print(
     )
 )
 
+# each line is named where it runs, in the workday panel, instead of in a legend
+rider_labels = pl.DataFrame(
+    {
+        "day_type": ["workday", "workday"],
+        "hour_of_day": [9.4, 11.5],
+        "starts": [9_000.0, 2_000.0],
+        "rider": ["annual members", "casual riders"],
+    }
+).with_columns(pl.col("day_type").cast(by_hour.schema["day_type"]))
 figure_1 = (
     ggplot(by_hour, aes("hour_of_day", "starts", color="rider"))
-    + geom_line(size=1)
-    + facet_wrap("day_type")
-    + scale_color_manual(values={"annual members": BLUE, "casual riders": ORANGE})
-    + scale_x_continuous(
-        breaks=range(0, 24, 3), labels=[f"{hour:02d}:00" for hour in range(0, 24, 3)]
+    # only the members' curve is shaded; two overlapping fills mix into brown
+    + geom_area(
+        data=by_hour.filter(pl.col("rider") == "annual members"),
+        fill=BLUE,
+        alpha=0.1,
+        color="none",
     )
-    + scale_y_continuous(labels=lambda values: [f"{value:,.0f}" for value in values])
+    + geom_line(size=1.1)
+    + geom_text(
+        aes(label="rider"),
+        data=rider_labels,
+        ha="left",
+        size=7,
+        fontweight="bold",
+        family=FONT,
+    )
+    + facet_wrap("day_type")
+    + scale_color_manual(
+        values={"annual members": BLUE, "casual riders": ORANGE}, guide=None
+    )
+    + scale_x_continuous(
+        breaks=range(0, 24, 3),
+        labels=[f"{hour:02d}:00" for hour in range(0, 24, 3)],
+        expand=(0, 0.4),
+    )
+    + scale_y_continuous(
+        labels=lambda values: [f"{value:,.0f}" for value in values], expand=(0, 0, 0.05, 0)
+    )
     + labs(
         title="Members ride at the rush hours on workdays; everyone rides midday at weekends",
-        x="hour the trip started",
+        subtitle="Average trips started per hour, development year",
+        x="",
         y="trips started per hour",
-        color="",
     )
     + REPORT_THEME
-    + theme(figure_size=(6.7, 2.7))
+    + theme(figure_size=(6.7, 2.8))
 )
 figure_1.save(FIGURES / "fig1-daily-rhythm.png", verbose=False)
 
@@ -181,30 +223,33 @@ print(
 figure_2 = (
     on_map(ggplot(), land, lng=(-74.07, -73.87), lat=(40.64, 40.86))
     + geom_point(
-        aes("lng", "lat", color="rush_net_flow"),
-        data=rush.with_columns(pl.col("rush_net_flow").clip(-15, 15)).sort(
-            pl.col("rush_net_flow").abs()
-        ),
-        size=0.55,
+        aes("lng", "lat", color="rush_net_flow", size="swing"),
+        data=rush.with_columns(
+            pl.col("rush_net_flow").clip(-15, 15),
+            swing=pl.col("rush_net_flow").abs().clip(0, 30),
+        ).sort("swing"),
         stroke=0,
+        alpha=0.9,
     )
     + facet_wrap("rush")
+    + scale_size_continuous(range=(0.25, 1.9), guide=None)
     + scale_color_gradient2(
         low=LOSING_RED,
-        mid=NEUTRAL,
+        mid=LIGHT_CONTEXT,
         high=BLUE,
         midpoint=0,
         limits=(-15, 15),
         breaks=[-15, 0, 15],
-        labels=["-15 or more", "0", "+15 or more"],
+        labels=["loses 15+", "even", "gains 15+"],
     )
     + labs(
         title="Mornings drain the residential areas into Midtown and downtown; evenings run it back",
-        color="bikes gained per rush  ",
+        subtitle="Average bikes each station gains over a workday rush; larger dots swing more",
+        color="",
     )
     + REPORT_THEME
     + MAP_THEME
-    + theme(figure_size=(6.7, 4.9), legend_key_width=110, legend_key_height=6)
+    + theme(figure_size=(6.7, 4.9), legend_key_width=110, legend_key_height=5)
 )
 figure_2.save(FIGURES / "fig2-rush-map.png", verbose=False)
 
@@ -249,7 +294,7 @@ figure_3 = (
         clock.with_columns(pl.col("net_flow").clip(-120, 120)),
         aes("hour_of_day", "label", fill="net_flow"),
     )
-    + geom_tile(color="white", size=0.15)
+    + geom_tile(color="white", size=0.4)
     + scale_fill_gradient2(
         low=LOSING_RED,
         mid=NEUTRAL,
@@ -257,7 +302,7 @@ figure_3 = (
         midpoint=0,
         limits=(-120, 120),
         breaks=[-120, 0, 120],
-        labels=["-120 or more", "0", "+120 or more"],
+        labels=["loses 120+", "even", "gains 120+"],
     )
     + scale_x_continuous(
         breaks=range(0, 24, 3),
@@ -266,16 +311,19 @@ figure_3 = (
     )
     + labs(
         title="Homes empty and offices fill before 10:00; the evening rush runs it back",
-        x="hour of the workday",
+        subtitle="Bikes gained per workday hour, all stations in the neighbourhood together",
+        x="",
         y="",
-        fill="bikes gained per hour",
+        fill="",
     )
     + REPORT_THEME
     + theme(
         figure_size=(6.7, 4.0),
-        axis_text_y=element_text(size=6.5),
+        axis_text_y=element_text(size=6.5, color=INK),
+        axis_line_x=element_blank(),
+        panel_grid_major_y=element_blank(),
         legend_key_width=110,
-        legend_key_height=6,
+        legend_key_height=5,
     )
 )
 figure_3.save(FIGURES / "fig3-neighbourhood-clock.png", verbose=False)
@@ -318,14 +366,30 @@ print(
     )
 )
 
+halves_correlation = halves.select(pl.corr("odd", "even")).item()
 figure_4 = (
-    ggplot(halves, aes("odd", "even"))
+    ggplot(halves.with_columns(tint=pl.col("odd").clip(-30, 30)), aes("odd", "even"))
     + geom_abline(color=CONTEXT, linetype="dashed", size=0.4)
-    + geom_point(color=BLUE, alpha=0.35, size=0.8, stroke=0)
+    + geom_point(aes(color="tint"), alpha=0.6, size=0.9, stroke=0)
+    + annotate(
+        "text",
+        x=-75,
+        y=95,
+        label=f"r = {halves_correlation:.3f}",
+        ha="left",
+        size=8,
+        fontweight="bold",
+        color=INK,
+        family=FONT,
+    )
+    + scale_color_gradient2(
+        low=LOSING_RED, mid=CONTEXT, high=BLUE, midpoint=0, limits=(-30, 30), guide=None
+    )
     + labs(
         title="The morning imbalance repeats week after week",
+        subtitle="One dot per station; dashed line: same in both",
         x="bikes gained per morning rush, odd weeks",
-        y="bikes gained per morning rush, even weeks",
+        y="even weeks",
     )
     + REPORT_THEME
     + theme(figure_size=(3.25, 3.0), plot_title=element_text(size=8.5))
@@ -365,6 +429,7 @@ print(
     )
 )
 
+day_correlation = morning_days.select(pl.corr("last_10", "net_flow")).item()
 figure_5 = (
     ggplot(
         morning_days.sample(30_000, seed=1).filter(
@@ -373,12 +438,25 @@ figure_5 = (
         ),
         aes("last_10", "net_flow"),
     )
-    + geom_abline(color=CONTEXT, linetype="dashed", size=0.4)
-    + geom_point(color=BLUE, alpha=0.12, size=0.6, stroke=0)
+    + geom_bin_2d(binwidth=4)
+    + geom_abline(color=INK, linetype="dashed", size=0.35, alpha=0.6)
+    + annotate(
+        "text",
+        x=-55,
+        y=100,
+        label=f"r = {day_correlation:.2f}",
+        ha="left",
+        size=8,
+        fontweight="bold",
+        color=INK,
+        family=FONT,
+    )
+    + scale_fill_gradient(low=PALE_BLUE, high=DARK_BLUE, trans="log10", guide=None)
     + labs(
         title="One day scatters around the station's habit",
+        subtitle="30,000 station-days; darker: more of them",
         x="average over the 10 workdays before",
-        y="bikes gained that morning rush",
+        y="that morning",
     )
     + REPORT_THEME
     + theme(figure_size=(3.25, 3.0), plot_title=element_text(size=8.5))
