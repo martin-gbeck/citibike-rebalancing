@@ -19,20 +19,20 @@ import statsmodels.formula.api as smf
 from plotnine import (
     aes,
     annotate,
+    coord_fixed,
     element_blank,
     element_line,
     element_text,
-    geom_line,
+    geom_abline,
     geom_point,
+    geom_ribbon,
     geom_segment,
     geom_text,
     geom_vline,
     ggplot,
     labs,
     scale_color_manual,
-    scale_size_manual,
     scale_x_continuous,
-    scale_x_date,
     scale_y_continuous,
     theme,
 )
@@ -44,7 +44,7 @@ from lib.chart_style import (
     FONT,
     INK,
     LOSING_RED,
-    MUTED,
+    ORANGE,
     REPORT_THEME,
     SHADE,
 )
@@ -133,68 +133,63 @@ print(scores)
 days.write_parquet(PROCESSED / "daily_demand.parquet")
 
 # %% [markdown]
-# ## Figure 6: the model against the two years
+# ## Figure 6: predicted against actual trips, every day of the test year
+# A day on the diagonal was forecast exactly; the band around it is the median miss either way.
 
 # %%
-long = days.select("date", actual="trips", model="predicted").unpivot(
-    index="date", variable_name="series", value_name="trips"
+test_days = days.filter(pl.col("is_test")).with_columns(
+    kind=pl.when(pl.col("year_end") == 1)
+    .then(pl.lit("Christmas week"))
+    .when(pl.col("weekend_or_holiday") == 1)
+    .then(pl.lit("weekend"))
+    .otherwise(pl.lit("workday"))
 )
 test_r2 = scores.filter(pl.col("is_test"))["r2"].item()
+median_miss = scores.filter(pl.col("is_test"))["median_abs_pct_error"].item()
+diagonal = pl.DataFrame({"trips": [0.0, 230_000.0]}).with_columns(
+    low=pl.col("trips") * (1 - median_miss), high=pl.col("trips") * (1 + median_miss)
+)
+thousands = lambda values: [f"{float(value) / 1000:,.0f}k" for value in values]  # noqa: E731
 figure_6 = (
-    ggplot(long, aes("date", "trips", color="series"))
-    + annotate(
-        "rect",
-        xmin=TEST_START,  # ty: ignore[invalid-argument-type]  plotnine takes dates on a date axis
-        xmax=date(2026, 9, 30),  # ty: ignore[invalid-argument-type]
-        ymin=0,
-        ymax=float("inf"),
-        fill=SHADE,
+    ggplot(test_days, aes("predicted", "trips"))
+    + geom_ribbon(
+        aes(x="trips", ymin="low", ymax="high"), data=diagonal, inherit_aes=False, fill=SHADE
     )
-    + geom_line(aes(size="series"))
+    + geom_abline(intercept=0, slope=1, color=CONTEXT, size=0.4, linetype="dashed")
+    + geom_point(aes(color="kind"), size=1.1, alpha=0.75, stroke=0)
     + annotate(
         "text",
-        x=date(2024, 10, 10),  # ty: ignore[invalid-argument-type]
-        y=232_000,
-        label="fitted here",
+        x=12_000,
+        y=222_000,
+        label=f"R² {test_r2:.2f}\nhalf of all days within {median_miss:.0%}",
         ha="left",
-        size=6.5,
-        color=MUTED,
-        family=FONT,
-    )
-    + annotate(
-        "text",
-        x=date(2025, 10, 10),  # ty: ignore[invalid-argument-type]
-        y=232_000,
-        label=f"scored here: R² {test_r2:.2f}",
-        ha="left",
+        va="top",
         size=6.5,
         color=INK,
-        fontweight="bold",
         family=FONT,
     )
     + scale_color_manual(
-        values={"actual": CONTEXT, "model": BLUE},
-        labels={"actual": "actual trips", "model": "model"},
+        values={"workday": BLUE, "weekend": ORANGE, "Christmas week": INK},
+        breaks=["workday", "weekend", "Christmas week"],
     )
-    + scale_size_manual(values={"actual": 0.45, "model": 0.35}, guide=None)
-    + scale_x_date(date_labels="%b %y", date_breaks="6 months")
-    + scale_y_continuous(
-        labels=lambda values: [f"{float(value) / 1000:,.0f}k" for value in values],
-        limits=(0, 245_000),
-        expand=(0, 0),
-    )
+    + scale_x_continuous(labels=thousands, limits=(0, 230_000), expand=(0, 0))
+    + scale_y_continuous(labels=thousands, limits=(0, 230_000), expand=(0, 0))
+    + coord_fixed()
     + labs(
-        title="Weather and calendar explain most daily swings",
-        subtitle="Trips per day; shaded: the test year",
-        x="",
-        y="",
+        title="Half of all test days land within 11%",
+        subtitle="Trips per day, test year; dashed: a perfect forecast",
+        x="predicted",
+        y="actual",
         color="",
     )
     + REPORT_THEME
     + theme(
-        figure_size=(3.35, 2.6),
+        figure_size=(3.35, 3.0),
         plot_title=element_text(size=8.5),
-        axis_text_x=element_text(size=6.5),
+        panel_grid_major_x=element_line(color="#ebe9e4", size=0.4),
+        legend_text=element_text(size=6.5),
+        legend_position="bottom",
+        legend_box_spacing=0.02,
     )
 )
 figure_6.save(FIGURES / "fig6-demand-model.png", verbose=False)
@@ -210,8 +205,8 @@ effects = {
     "+1 wet hour in the day": ("wet_hours", 1),
     "+5 cm snow in the last 3 days": ("snow_3_days_cm", 5),
     "+10 km/h wind": ("wind_kmh", 10),
-    "weekend or holiday": ("weekend_or_holiday", 1),
-    "24 Dec to 1 Jan": ("year_end", 1),
+    "weekend": ("weekend_or_holiday", 1),
+    "Christmas week": ("year_end", 1),
 }
 covariance = model.cov_params()
 rows: list[dict[str, float | str]] = []

@@ -9,33 +9,37 @@ import os
 os.environ["POLARS_MAX_THREADS"] = "6"
 
 from datetime import date
-from typing import cast
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import polars as pl
 from plotnine import (
     aes,
-    annotate,
+    coord_flip,
+    element_blank,
+    element_line,
     element_text,
     facet_wrap,
     geom_area,
+    geom_col,
     geom_hline,
+    geom_label,
     geom_line,
-    geom_path,
     geom_point,
     geom_text,
-    geom_vline,
     ggplot,
     guide_legend,
     guides,
     labs,
     scale_color_gradient2,
     scale_color_manual,
+    scale_fill_manual,
     scale_linetype_manual,
     scale_size_area,
     scale_x_continuous,
     scale_x_date,
+    scale_x_discrete,
     scale_y_continuous,
     theme,
 )
@@ -43,7 +47,6 @@ from plotnine import (
 from lib.chart_style import (
     BLUE,
     CONTEXT,
-    DARK_BLUE,
     FIGURES,
     FONT,
     INK,
@@ -98,187 +101,137 @@ with pl.Config(tbl_rows=30, float_precision=0, fmt_str_lengths=30):
     )
 
 # %% [markdown]
-# ## Figure 9: shortages against bikes moved, every schedule on the test year
+# ## Figure 9: riders turned away and bikes moved, the main schedules on the test year
 
 # %%
-labels = {
-    "half": "every station reset to half full",
-    "band": "every station moved into its band (budget 9,000)",
-    "oracle": "band known in advance (ceiling)",
-}
-points = summary.filter(pl.col("policy") != "none").with_columns(
-    kind=pl.when(pl.col("family") == "budget")
-    .then(pl.lit("nightly budget"))
-    .when(pl.col("family").str.contains("midday"))
-    .then(pl.lit(MIDDAY_LABEL))
-    .otherwise(pl.lit("simple rule"))
-)
-# the chart stops a fifth above the half-full reset; schedules above that are named in a note
-half_shortages = cast(
-    float, summary.filter(pl.col("policy") == "half")["shortages_per_day"].item()
-)
-top = half_shortages * 1.2
-off_chart = summary.filter(pl.col("shortages_per_day") > top).sort(
-    "shortages_per_day", descending=True
-)
-off_chart_note = "above the chart:\n" + "\n".join(
-    f"{'no rebalancing' if name == 'none' else name.replace('budget-', 'budget ')} {value:,.0f}"
-    for name, value in off_chart.select("policy", "shortages_per_day").iter_rows()
-)
-points = points.filter(pl.col("shortages_per_day") <= top)
 # what Citi Bike reports moving per day over the test-year months with a report
 reported = fetch_rebalanced_bikes(Path("data/raw")).filter(pl.col("month") >= days[0])
 reported_per_day = reported.select(
     pl.col("bikes_rebalanced").sum()
     / pl.col("month").dt.month_end().dt.day().cast(pl.Int64).sum()
 ).item()
-budget_curve = points.filter(pl.col("kind") == "nightly budget").sort(
-    "bikes_moved_per_day"
-)
-midday_curve = pl.concat(
-    [
-        points.filter(pl.col("policy") == NIGHT_ONLY),
-        points.filter(pl.col("kind") == MIDDAY_LABEL).sort("bikes_moved_per_day"),
-    ]
-).with_columns(kind=pl.lit(MIDDAY_LABEL))
-# where each rule's name sits relative to its point, so no label leaves the panel or hits a curve
-label_place = {
-    "half": ("right", -70, 0.05 * top),
-    "band": ("left", 70, 0.05 * top),
-    "oracle": ("left", -450, -0.08 * top),
+schedule_names = {
+    "none": "never move a bike",
+    "half": "reset to half full",
+    "band": "every station into its band",
+    NIGHT_ONLY: f"night budget {NIGHT_BUDGET}",
+    RECOMMENDED: "recommended",
+    "oracle": "band known in advance",
 }
-simple = points.filter(pl.col("kind") == "simple rule").with_columns(
-    label=pl.col("policy").replace_strict(labels),
-    ha=pl.col("policy").replace_strict(
-        {name: place[0] for name, place in label_place.items()}
-    ),
-    label_x=pl.col("bikes_moved_per_day")
-    + pl.col("policy").replace_strict(
-        {name: place[1] for name, place in label_place.items()}
-    ),
-    label_y=pl.col("shortages_per_day")
-    + pl.col("policy").replace_strict(
-        {name: place[2] for name, place in label_place.items()}
-    ),
+TURNED_AWAY = "riders turned away per day"
+MOVED = "bikes moved per day"
+# the shortage panel stops just past the half-full reset; never moving a bike runs off it
+shortage_limit = 5_600
+schedules = (
+    summary.filter(pl.col("policy").is_in(list(schedule_names)))
+    .select(
+        schedule=pl.col("policy").replace_strict(schedule_names),
+        role=pl.when(pl.col("policy") == RECOMMENDED)
+        .then(pl.lit("recommended"))
+        .when(pl.col("policy") == "oracle")
+        .then(pl.lit("ceiling"))
+        .otherwise(pl.lit("other")),
+        turned_away=pl.col("shortages_per_day"),
+        moved=pl.col("bikes_moved_per_day"),
+    )
+    .unpivot(index=["schedule", "role"], variable_name="measure", value_name="value")
+    .with_columns(
+        measure=pl.col("measure")
+        .replace_strict({"turned_away": TURNED_AWAY, "moved": MOVED})
+        .cast(pl.Enum([TURNED_AWAY, MOVED])),
+        # bottom to top on the chart, so the list reads top down in the order above
+        schedule=pl.col("schedule").cast(pl.Enum(list(reversed(schedule_names.values())))),
+        shown=pl.when(pl.col("measure") == "turned_away")
+        .then(pl.col("value").clip(upper_bound=shortage_limit))
+        .otherwise(pl.col("value")),
+        label=pl.col("value").map_elements(
+            lambda value: f"{int(value + 0.5):,}", return_dtype=pl.String
+        ),
+    )
+    .with_columns(
+        label=pl.when(pl.col("value") > pl.col("shown"))
+        .then(pl.col("label") + ", bar cut")
+        .otherwise(pl.col("label")),
+        label_y=pl.col("shown") + 120,
+        cut=pl.col("value") > pl.col("shown"),
+    )
 )
-budget_labels = budget_curve.filter(
-    pl.col("policy").is_in(["budget-1000", "budget-2000", NIGHT_ONLY])
-).with_columns(
-    label=pl.col("policy")
-    .str.replace("budget-", "")
-    .cast(pl.Int32)
-    .map_elements(lambda bikes: f"{bikes:,}", return_dtype=pl.String)
-)
-recommended = points.filter(pl.col("policy") == RECOMMENDED)
+reported_line = pl.DataFrame(
+    {"measure": [MOVED], "value": [reported_per_day]}
+).with_columns(pl.col("measure").cast(pl.Enum([TURNED_AWAY, MOVED])))
 
-figure_8 = (
-    ggplot()
-    + geom_path(
-        aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
-        data=budget_curve,
-        size=0.8,
-    )
-    + geom_path(
-        aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
-        data=midday_curve,
-        size=0.8,
-    )
-    + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
-        data=budget_curve,
-        size=1.4,
-    )
-    + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day", color="kind"),
-        data=midday_curve.tail(-1),
-        size=1.4,
-    )
-    + geom_text(
-        aes("bikes_moved_per_day", "shortages_per_day", label="label"),
-        data=budget_labels,
-        size=6,
-        nudge_y=0.05 * top,
-        color=MUTED,
-        family=FONT,
-    )
-    + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day"), data=simple, color=MUTED, size=2.2
-    )
-    + geom_text(
-        aes("label_x", "label_y", label="label", ha="ha"),
-        data=simple,
-        size=6.5,
-        color=MUTED,
-        family=FONT,
-    )
-    + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day"),
-        data=recommended,
-        color=DARK_BLUE,
-        size=5.5,
-        fill="white",
-        stroke=1.2,
-    )
-    + geom_point(
-        aes("bikes_moved_per_day", "shortages_per_day"),
-        data=recommended,
-        color=DARK_BLUE,
-        size=2,
-    )
-    + annotate(
-        "text",
-        x=float(recommended["bikes_moved_per_day"].item()) + 60,
-        y=float(recommended["shortages_per_day"].item()) - 0.12 * top,
-        label=f"recommended: budget {NIGHT_BUDGET}\n+ 100 stations at 14:00",
-        ha="left",
-        size=7,
+figure_9 = (
+    ggplot(schedules, aes("schedule", "shown", fill="role"))
+    + geom_hline(
+        aes(yintercept="value"),
+        data=reported_line,
         color=INK,
-        fontweight="bold",
+        linetype="dashed",
+        size=0.4,
+    )
+    + geom_col(width=0.68)
+    + geom_label(
+        aes(y="label_y", label="label"),
+        data=schedules.filter(~pl.col("cut")),
+        ha="left",
+        size=6.5,
+        color=INK,
+        fill="white",
+        label_size=0,
+        label_padding=0.1,
         family=FONT,
     )
-    + annotate(
-        "text",
-        x=30,
-        y=top * 0.99,
-        label=off_chart_note,
+    + geom_text(
+        aes(y="shown", label="label"),
+        data=schedules.filter(pl.col("cut")),
+        ha="right",
+        nudge_y=-120,
+        size=6.5,
+        color="white",
+        family=FONT,
+    )
+    + geom_text(
+        aes(x=6.6, y="value", label="label"),
+        data=reported_line.with_columns(
+            label=pl.lit(f"Citi Bike today: {reported_per_day:,.0f}")
+        ),
+        inherit_aes=False,
         ha="left",
-        va="top",
+        nudge_y=90,
         size=6,
         color=MUTED,
         family=FONT,
     )
-    + geom_vline(
-        xintercept=reported_per_day, color=CONTEXT, linetype="dashed", size=0.4
-    )
-    + annotate(
-        "text",
-        x=reported_per_day + 50,
-        y=top * 0.62,
-        label=f"Citi Bike's reported moves,\n{reported_per_day:,.0f} a day",
-        ha="left",
-        size=6.5,
-        color=MUTED,
-        family=FONT,
-    )
-    + scale_color_manual(values={"nightly budget": BLUE, MIDDAY_LABEL: DARK_BLUE})
-    + scale_x_continuous(
-        labels=lambda values: [f"{float(value):,.0f}" for value in values]
+    + facet_wrap("measure")
+    + coord_flip()
+    + scale_fill_manual(
+        values={"recommended": BLUE, "ceiling": LIGHT_CONTEXT, "other": CONTEXT},
+        guide=None,
     )
     + scale_y_continuous(
         labels=lambda values: [f"{float(value):,.0f}" for value in values],
-        limits=(0, top),
+        limits=(0, 7_000),
+        breaks=[0, 2_000, 4_000, 6_000],
+        expand=(0, 0),
     )
+    + scale_x_discrete(expand=(0, 0.6))
     + labs(
-        title="Moving fewer bikes, to the right stations, prevents more shortages than moving many",
-        subtitle="Test year, October 2025 to September 2026. Numbers on the curve: night budget in bikes loaded or unloaded",
-        x="bikes moved per day",
-        y="riders turned away per day",
-        color="",
+        title="Recommended: 62% fewer riders turned away than half full, with 57% fewer bikes moved",
+        subtitle="Test-year averages. Band known in advance is a ceiling no real forecast reaches",
+        x="",
+        y="",
     )
     + REPORT_THEME
-    + theme(figure_size=(6.7, 3.5))
+    + theme(
+        figure_size=(6.7, 2.6),
+        panel_grid_major_y=element_blank(),
+        panel_grid_major_x=element_line(color="#ebe9e4", size=0.4),
+        axis_line_x=element_blank(),
+        axis_text_y=element_text(size=7.5, color=INK),
+        panel_spacing_x=0.04,
+    )
 )
-figure_8.save(FIGURES / "fig9-tradeoff.png", verbose=False)
+figure_9.save(FIGURES / "fig9-tradeoff.png", verbose=False)
 
 # %% [markdown]
 # Wasted moves under the half-full rule: bikes moved at stations whose stock was already inside
