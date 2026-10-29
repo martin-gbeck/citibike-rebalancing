@@ -1,4 +1,5 @@
 # Citi Bike rebalancing: background
+Prefer to listen? [01-background.mp3](01-background.mp3) reads this document aloud (about 14 minutes).
 
 Everything you need before the figures make sense: how Citi Bike works, what the data is, how we turn it into something we can analyse, and the few ideas the whole project rests on. The figure-by-figure guide is `02-figures-and-model.md`.
 
