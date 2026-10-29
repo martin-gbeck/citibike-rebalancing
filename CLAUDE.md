@@ -14,3 +14,4 @@
 - Memory: anything grouped by station and time runs one month at a time; a single pass over both years took 15 to 20 GB. Polars is capped at 6 threads.
 - The trip Parquet files sit in `data/raw/tripdata.nosync/` and the venv in `.venv.nosync`, both out of iCloud sync on purpose; `.venv` is a link to it. Set it up with `ln -sfn .venv.nosync .venv && UV_PROJECT_ENVIRONMENT=.venv.nosync uv sync`. Library versions are pinned in `pyproject.toml` to the ones the report numbers came from.
 - `examples/rank_over.py` and `examples/rank_diff.py` are not part of the pipeline: they show the old and new way `load_trip_slots` ranks riders within a slot, on a toy day and one real month.
+- `walkthrough.ipynb` (paired with `walkthrough.py`) is the readable tour of the whole project for Martin and the group: it follows the report section by section, reads the saved outputs only, and runs in under a minute.

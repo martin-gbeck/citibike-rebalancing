@@ -12,3 +12,4 @@ data/raw/operating-reports/
 # the venv lives in .venv.nosync so iCloud skips it; .venv is a link to it
 .venv
 .venv.nosync/
+.*.synced
