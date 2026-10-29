@@ -200,9 +200,9 @@ def load_trip_slots(
     """The trips starting in `days` service days from `first_day`, from the test-year trip table."""
     window_start = datetime.combine(first_day, time(DAY_START_HOUR))
     origin_time = datetime.combine(simulation_start, time(DAY_START_HOUR))
-    rows = pl.DataFrame(
-        {"station_id": station_ids, "row": np.arange(len(station_ids), dtype=np.int32)}
-    )
+    # an Enum stores each id as its position in `station_ids`, so casting to it turns ids into
+    # station rows with one lookup each; ids outside the simulation become null
+    stations = pl.Enum(station_ids)
     trips = (
         pl.scan_parquet(trips_dir / "*.parquet")
         .filter(
@@ -210,16 +210,16 @@ def load_trip_slots(
                 window_start, window_start + timedelta(days=days), closed="left"
             )
         )
-        .join(rows.lazy(), left_on="start_station_id", right_on="station_id")
-        .join(
-            rows.lazy().rename({"row": "destination"}),
-            left_on="end_station_id",
-            right_on="station_id",
-            how="left",
-        )
         .select(
-            origin="row",
-            destination=pl.col("destination").fill_null(-1),
+            origin=pl.col("start_station_id")
+            .cast(stations, strict=False)
+            .to_physical()
+            .cast(pl.Int32),
+            destination=pl.col("end_station_id")
+            .cast(stations, strict=False)
+            .to_physical()
+            .cast(pl.Int32)
+            .fill_null(-1),
             # slots counted from 04:00 on the first simulated day
             start=((pl.col("start_slot") - origin_time).dt.total_minutes() // 5).cast(
                 pl.Int64
@@ -228,8 +228,19 @@ def load_trip_slots(
                 pl.Int64
             ),
         )
+        .filter(pl.col("origin").is_not_null())
         .sort("start", "origin")
-        .with_columns(rank=pl.int_range(pl.len()).over("start", "origin"))
+        # after the sort each slot and station is one run of rows, so a rider's place in the
+        # queue is their row minus the row where the run starts
+        .with_columns(row=pl.int_range(pl.len()))
+        .with_columns(
+            rank=pl.col("row")
+            - pl.when((pl.col("start").diff() != 0) | (pl.col("origin").diff() != 0))
+            .then(pl.col("row"))
+            .forward_fill()
+            .fill_null(0)
+        )
+        .drop("row")
         .collect()
     )
     start = trips["start"].to_numpy()
