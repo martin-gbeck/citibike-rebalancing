@@ -3,7 +3,7 @@
 # run order, into submission/source/. Scripts keep their markdown cells as formatted text.
 set -euo pipefail
 cd "$(dirname "$0")"
-VENV=../.venv/bin
+VENV=.venv/bin
 OUT=submission/source
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

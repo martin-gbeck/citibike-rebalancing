@@ -1,0 +1,30 @@
+[project]
+name = "citibike-rebalancing"
+version = "0.1.0"
+description = "DAO2702X group project: which Citi Bike stations to restock or clear each night, scored by replaying two years of trips"
+requires-python = "==3.12.*"
+# pinned to the versions the report numbers came from; a newer polars may order ties differently
+dependencies = [
+    "matplotlib==3.11.2",
+    "numpy==2.5.3",
+    "pandas==3.0.6",
+    "pandera==0.34.1",
+    "pillow==12.3.0",
+    "plotnine==0.15.8",
+    "polars==1.44.2",
+    "pyarrow==25.0.1",
+    "requests==2.34.2",
+    "statsmodels==0.15.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.4.0",
+    "jupytext>=1.19.5",
+    "nbconvert>=7.17.1",
+    "nbformat>=5.11.1",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'darwin'"]
