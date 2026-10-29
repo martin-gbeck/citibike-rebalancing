@@ -1,4 +1,5 @@
 # Citi Bike rebalancing: every figure and the model
+Prefer to listen? [02-figures-and-model.mp3](02-figures-and-model.mp3) reads this document aloud (about 22 minutes).
 
 How to read each of the 13 figures in the report, what it tells us, and the question someone is likely to ask about it. Read `01-background.md` first for the terms (drift, need, room, target band). The figures sit in `figures/`.
 
