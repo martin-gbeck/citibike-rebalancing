@@ -20,7 +20,7 @@ import polars as pl
 riders = pl.DataFrame(
     {
         "start": [1, 0, 0, 1, 0, 0],
-        "origin": [7, 7, 2, 7, 7, 7],
+        "origin": [7, 7, 2, 4, 6, 4],
         "rider": ["f", "a", "d", "e", "b", "c"],
     }
 )
@@ -37,9 +37,15 @@ print(ranked)
 month_start = datetime(2025, 10, 1, 4)
 trips = (
     pl.scan_parquet("data/processed/trips/*.parquet")
-    .filter(pl.col("start_slot").is_between(month_start, datetime(2025, 11, 1, 4), closed="left"))
+    .filter(
+        pl.col("start_slot").is_between(
+            month_start, datetime(2025, 11, 1, 4), closed="left"
+        )
+    )
     .select(
-        start=((pl.col("start_slot") - month_start).dt.total_minutes() // 5).cast(pl.Int64),
+        start=((pl.col("start_slot") - month_start).dt.total_minutes() // 5).cast(
+            pl.Int64
+        ),
         origin=pl.col("start_station_id"),
     )
     .collect()

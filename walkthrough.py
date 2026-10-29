@@ -117,8 +117,9 @@ ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
 plt.show()
 
 # %% [markdown]
-# Read the chart as: starting from whatever it had at 04:00, the station gains about
-# `highest` bikes by the end of the morning rush. Two numbers decide whether a starting level
+# Read the chart as: starting from whatever it had at 04:00, the station gains about 105 bikes
+# by 10:00, holds them through the day, and gives them all back between 16:00 and 19:00. It
+# never drops below its 04:00 level. Two numbers decide whether a starting level
 # works that day:
 #
 # - **need** = how far the drift falls below zero. Start with fewer bikes than that and the
