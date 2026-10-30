@@ -525,6 +525,33 @@ async function build() {
     s.addNotes("Our first draft used the simple model. If someone saw an earlier version, this is why the headline changed.");
   }
   {
+    const s = content("Backup for Q&A", "Backup: the data that would close the gap to 869");
+    const items = [
+      ["Riders who were turned away", "app searches and failed unlocks give true demand at stations that are often empty", "Citi Bike has it"],
+      ["Bikes and free docks every minute", "real stock and working docks, instead of stock rebuilt from trips", "live feed public, history not"],
+      ["Citi Bike's own moves", "separates riders' flow from Citi Bike's old plan, and scores that plan", "Citi Bike has it"],
+      ["Events", "one-off spikes a 10-day average can't see, like Madison Square Garden", "partly public"],
+      ["Subway disruptions", "riders switch to bikes along a line that goes down", "public (MTA)"],
+    ];
+    items.forEach(([head, body, source], i) => {
+      const y = CONTENT_TOP + 0.05 + i * 0.95;
+      card(s, M, y, W - 2 * M, 0.8);
+      s.addText(String(i + 1), { x: M + 0.2, y, w: 0.5, h: 0.8, fontSize: 24, bold: true, color: C.accent1, margin: 0, valign: "middle", isTextBox: true });
+      s.addText(head, { x: M + 0.8, y, w: 3.9, h: 0.8, fontSize: 16, bold: true, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
+      s.addText(body, { x: M + 4.9, y, w: 4.9, h: 0.8, fontSize: 14, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
+      s.addText(source, { x: M + 9.95, y, w: 2.0, h: 0.8, fontSize: 13, color: C.accent6, margin: 0, valign: "middle", isTextBox: true });
+    });
+    s.addText("Ranked by how much each would change the plan. Our own weather model was scored on the weather that happened, not the forecast, so its 11% miss is a best case.", {
+      x: M, y: 6.4, w: W - 2 * M, h: 0.55, fontSize: 13, color: C.accent6, margin: 0, valign: "top", isTextBox: true,
+    });
+    s.addNotes(
+      "If asked how the plan could get better: the gap between our 1,779 and the 869 with perfect foresight is all forecasting, so better data is where the gain is.\n" +
+      "The top three are data Citi Bike already collects and doesn't publish. Riders who were turned away would give true demand at the stations that are often empty, which are the ones whose bands we set too low. Minute-by-minute station status would replace the stock we rebuild from trips. And its own truck moves would let us score its real plan instead of half full.\n" +
+      "Events and subway disruptions are public and could go into the model as they are.\n\n" +
+      "If asked about the weather model: it was scored on the weather that actually happened. The night shift would be planned from the forecast, so the real miss would be a bit bigger than 11%. Office attendance, school calendars and costs are further down the list in our data doc."
+    );
+  }
+  {
     const s = content("Backup for Q&A", "Backup: numbers people mix up");
     const items = [
       ["3,000", "is the night budget in bikes loaded plus unloaded; it moves about 1,900 bikes (1,877 a day on the test year)"],
