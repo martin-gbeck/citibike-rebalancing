@@ -7795,7 +7795,7 @@ a.anchor-link {
 </style>
 <!-- End of mermaid configuration --></head>
 <body class="jp-Notebook" data-jp-theme-light="true" data-jp-theme-name="JupyterLab Light">
-<main><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=f94eedd4">
+<main><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=333bc0a9">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7803,7 +7803,7 @@ a.anchor-link {
 <div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="sd">"""One look for every report figure: palette, print-sized theme, and the land behind the maps."""</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="sd">"""One look for every report figure: palette, print-sized theme, and the land and water behind the maps."""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
@@ -7813,6 +7813,7 @@ a.anchor-link {
     <span class="n">coord_fixed</span><span class="p">,</span>
     <span class="n">element_blank</span><span class="p">,</span>
     <span class="n">element_line</span><span class="p">,</span>
+    <span class="n">element_rect</span><span class="p">,</span>
     <span class="n">element_text</span><span class="p">,</span>
     <span class="n">geom_polygon</span><span class="p">,</span>
     <span class="n">ggplot</span><span class="p">,</span>
@@ -7823,32 +7824,47 @@ a.anchor-link {
 <span class="n">FIGURES</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"figures"</span><span class="p">)</span>
 
 <span class="c1"># blue is the commuter side and stations gaining bikes, red stations losing them, orange the leisure</span>
-<span class="c1"># side (weekends, casual riders) and the midday van, grey is context</span>
-<span class="n">BLUE</span> <span class="o">=</span> <span class="s2">"#2a78d6"</span>
-<span class="n">DARK_BLUE</span> <span class="o">=</span> <span class="s2">"#174a8b"</span>
-<span class="n">ORANGE</span> <span class="o">=</span> <span class="s2">"#eb6834"</span>
-<span class="n">LOSING_RED</span> <span class="o">=</span> <span class="s2">"#e34948"</span>
-<span class="n">CONTEXT</span> <span class="o">=</span> <span class="s2">"#9c9a92"</span>
-<span class="n">LIGHT_CONTEXT</span> <span class="o">=</span> <span class="s2">"#d9d7d0"</span>
-<span class="n">NEUTRAL</span> <span class="o">=</span> <span class="s2">"#f0efec"</span>
-<span class="n">LAND</span> <span class="o">=</span> <span class="s2">"#efeee9"</span>
-<span class="n">INK</span> <span class="o">=</span> <span class="s2">"#1d1d1b"</span>
+<span class="c1"># side (weekends, casual riders), grey is context. Blue, dark blue, orange and red pass the dataviz</span>
+<span class="c1"># validator's colour-blind and contrast checks against white.</span>
+<span class="n">BLUE</span> <span class="o">=</span> <span class="s2">"#3b7dd8"</span>
+<span class="n">DARK_BLUE</span> <span class="o">=</span> <span class="s2">"#1f4f99"</span>
+<span class="n">PALE_BLUE</span> <span class="o">=</span> <span class="s2">"#e3ecf8"</span>
+<span class="n">ORANGE</span> <span class="o">=</span> <span class="s2">"#d4692a"</span>
+<span class="n">LOSING_RED</span> <span class="o">=</span> <span class="s2">"#c9403a"</span>
+<span class="n">CONTEXT</span> <span class="o">=</span> <span class="s2">"#9a978f"</span>
+<span class="n">LIGHT_CONTEXT</span> <span class="o">=</span> <span class="s2">"#d6d3cc"</span>
+<span class="n">NEUTRAL</span> <span class="o">=</span> <span class="s2">"#eeece7"</span>
+<span class="n">LAND</span> <span class="o">=</span> <span class="s2">"#f7f5f0"</span>
+<span class="n">WATER</span> <span class="o">=</span> <span class="s2">"#dde7ef"</span>
+<span class="n">SHADE</span> <span class="o">=</span> <span class="s2">"#f3f1ec"</span>
+<span class="n">INK</span> <span class="o">=</span> <span class="s2">"#22252a"</span>
+<span class="n">MUTED</span> <span class="o">=</span> <span class="s2">"#6b6e75"</span>
+<span class="n">FONT</span> <span class="o">=</span> <span class="s2">"Avenir Next"</span>
 
 <span class="c1"># the report's text block is 170 mm wide; figures are drawn at that width and printed unscaled</span>
 <span class="n">FULL_WIDTH</span> <span class="o">=</span> <span class="mf">6.7</span>
-<span class="n">REPORT_THEME</span> <span class="o">=</span> <span class="n">theme_minimal</span><span class="p">(</span><span class="n">base_size</span><span class="o">=</span><span class="mi">8</span><span class="p">)</span> <span class="o">+</span> <span class="n">theme</span><span class="p">(</span>
+<span class="n">REPORT_THEME</span> <span class="o">=</span> <span class="n">theme_minimal</span><span class="p">(</span><span class="n">base_size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">base_family</span><span class="o">=</span><span class="n">FONT</span><span class="p">)</span> <span class="o">+</span> <span class="n">theme</span><span class="p">(</span>
     <span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="n">FULL_WIDTH</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">),</span>
     <span class="n">dpi</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
-    <span class="n">legend_position</span><span class="o">=</span><span class="s2">"top"</span><span class="p">,</span>
-    <span class="n">legend_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">),</span>
-    <span class="n">legend_text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">),</span>
-    <span class="n">plot_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">9</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="s2">"bold"</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">),</span>
-    <span class="n">plot_subtitle</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"#55544f"</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">),</span>
-    <span class="n">text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">INK</span><span class="p">),</span>
-    <span class="n">axis_text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"#55544f"</span><span class="p">),</span>
+    <span class="n">plot_background</span><span class="o">=</span><span class="n">element_rect</span><span class="p">(</span><span class="n">fill</span><span class="o">=</span><span class="s2">"white"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"none"</span><span class="p">),</span>
+    <span class="n">plot_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">9.5</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="s2">"bold"</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">INK</span><span class="p">),</span>
+    <span class="n">plot_subtitle</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">MUTED</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">),</span>
+    <span class="n">plot_title_position</span><span class="o">=</span><span class="s2">"plot"</span><span class="p">,</span>
+    <span class="n">text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">INK</span><span class="p">,</span> <span class="n">family</span><span class="o">=</span><span class="n">FONT</span><span class="p">),</span>
+    <span class="n">axis_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">MUTED</span><span class="p">),</span>
+    <span class="n">axis_text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">7</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">MUTED</span><span class="p">),</span>
+    <span class="n">axis_line_x</span><span class="o">=</span><span class="n">element_line</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"#b9b6ae"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.5</span><span class="p">),</span>
+    <span class="n">axis_ticks</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
     <span class="n">panel_grid_minor</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
-    <span class="n">panel_grid_major</span><span class="o">=</span><span class="n">element_line</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"#e6e5e0"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
-    <span class="n">strip_text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="s2">"bold"</span><span class="p">),</span>
+    <span class="n">panel_grid_major_x</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
+    <span class="n">panel_grid_major_y</span><span class="o">=</span><span class="n">element_line</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"#ebe9e4"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.4</span><span class="p">),</span>
+    <span class="n">legend_position</span><span class="o">=</span><span class="s2">"top"</span><span class="p">,</span>
+    <span class="n">legend_justification</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span>
+    <span class="n">legend_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">MUTED</span><span class="p">),</span>
+    <span class="n">legend_text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">7.5</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">INK</span><span class="p">),</span>
+    <span class="n">legend_key</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
+    <span class="n">strip_text</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="s2">"bold"</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">INK</span><span class="p">),</span>
+    <span class="n">strip_background</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
 <span class="p">)</span>
 
 <span class="c1"># one degree of longitude is shorter than one of latitude at New York's 40.7 degrees north</span>
@@ -7856,8 +7872,10 @@ a.anchor-link {
 <span class="n">MAP_THEME</span> <span class="o">=</span> <span class="n">theme</span><span class="p">(</span>
     <span class="n">axis_text</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
     <span class="n">axis_title</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
-    <span class="n">panel_grid_major</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
-    <span class="n">panel_grid_minor</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
+    <span class="n">axis_line_x</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
+    <span class="n">panel_grid_major_y</span><span class="o">=</span><span class="n">element_blank</span><span class="p">(),</span>
+    <span class="n">panel_background</span><span class="o">=</span><span class="n">element_rect</span><span class="p">(</span><span class="n">fill</span><span class="o">=</span><span class="n">WATER</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"none"</span><span class="p">),</span>
+    <span class="n">legend_key</span><span class="o">=</span><span class="n">element_rect</span><span class="p">(</span><span class="n">fill</span><span class="o">=</span><span class="s2">"white"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"none"</span><span class="p">),</span>
 <span class="p">)</span>
 
 
@@ -7871,8 +7889,8 @@ a.anchor-link {
             <span class="n">aes</span><span class="p">(</span><span class="s2">"lng"</span><span class="p">,</span> <span class="s2">"lat"</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="s2">"ring"</span><span class="p">),</span>
             <span class="n">data</span><span class="o">=</span><span class="n">land</span><span class="p">,</span>
             <span class="n">fill</span><span class="o">=</span><span class="n">LAND</span><span class="p">,</span>
-            <span class="n">color</span><span class="o">=</span><span class="s2">"#cfcdc5"</span><span class="p">,</span>
-            <span class="n">size</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span>
+            <span class="n">color</span><span class="o">=</span><span class="s2">"#d9d5cc"</span><span class="p">,</span>
+            <span class="n">size</span><span class="o">=</span><span class="mf">0.15</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="o">+</span> <span class="n">coord_fixed</span><span class="p">(</span><span class="n">ratio</span><span class="o">=</span><span class="n">LNG_PER_LAT</span><span class="p">,</span> <span class="n">xlim</span><span class="o">=</span><span class="n">lng</span><span class="p">,</span> <span class="n">ylim</span><span class="o">=</span><span class="n">lat</span><span class="p">,</span> <span class="n">expand</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
     <span class="p">)</span>

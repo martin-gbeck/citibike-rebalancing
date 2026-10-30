@@ -3,7 +3,7 @@
 <html lang="en">
 <head><meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>03-explore</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
+<title>08-lib-demand</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <style type="text/css">
     pre { line-height: 125%; }
 td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
@@ -7795,19 +7795,7 @@ a.anchor-link {
 </style>
 <!-- End of mermaid configuration --></head>
 <body class="jp-Notebook" data-jp-theme-light="true" data-jp-theme-name="JupyterLab Light">
-<main>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0994cd00">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="Exploration:-when-and-where-the-flow-runs-one-way">Exploration: when and where the flow runs one way<a class="anchor-link" href="#Exploration:-when-and-where-the-flow-runs-one-way">¶</a></h1><p>Development year only (October 2024 to September 2025). Writes figures 1 to 4 to <code>figures/</code>
-and prints the numbers the report quotes.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=fe6423bc">
+<main><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=f6a2faf2">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7815,496 +7803,96 @@ and prints the numbers the report quotes.</p>
 <div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="sd">"""The daily demand model: how many trips the whole system has in a day, from weather and</span>
+<span class="sd">calendar. Used by `demand_model.py` (which saves the forecast for `rebalance.py`) and by the</span>
+<span class="sd">walkthrough notebook (which reports and draws it)."""</span>
 
-<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"POLARS_MAX_THREADS"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"6"</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">plotnine</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">aes</span><span class="p">,</span>
-    <span class="n">element_text</span><span class="p">,</span>
-    <span class="n">facet_wrap</span><span class="p">,</span>
-    <span class="n">geom_abline</span><span class="p">,</span>
-    <span class="n">geom_line</span><span class="p">,</span>
-    <span class="n">geom_point</span><span class="p">,</span>
-    <span class="n">geom_tile</span><span class="p">,</span>
-    <span class="n">ggplot</span><span class="p">,</span>
-    <span class="n">labs</span><span class="p">,</span>
-    <span class="n">scale_color_gradient2</span><span class="p">,</span>
-    <span class="n">scale_color_manual</span><span class="p">,</span>
-    <span class="n">scale_fill_gradient2</span><span class="p">,</span>
-    <span class="n">scale_x_continuous</span><span class="p">,</span>
-    <span class="n">scale_y_continuous</span><span class="p">,</span>
-    <span class="n">theme</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">statsmodels.formula.api</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">smf</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">statsmodels.regression.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">RegressionResultsWrapper</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">lib.chart_style</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">BLUE</span><span class="p">,</span>
-    <span class="n">CONTEXT</span><span class="p">,</span>
-    <span class="n">FIGURES</span><span class="p">,</span>
-    <span class="n">LOSING_RED</span><span class="p">,</span>
-    <span class="n">NEUTRAL</span><span class="p">,</span>
-    <span class="n">ORANGE</span><span class="p">,</span>
-    <span class="n">REPORT_THEME</span><span class="p">,</span>
-    <span class="n">MAP_THEME</span><span class="p">,</span>
-    <span class="n">on_map</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">lib.geography</span><span class="w"> </span><span class="kn">import</span> <span class="n">land_outline</span><span class="p">,</span> <span class="n">station_areas</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">lib.fetching</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_weather</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">lib.rebalancing</span><span class="w"> </span><span class="kn">import</span> <span class="n">HOLIDAYS</span>
 
-<span class="n">PROCESSED</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"data/processed"</span><span class="p">)</span>
-<span class="n">BOUNDARIES</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"data/raw/boundaries"</span><span class="p">)</span>
-<span class="n">TEST_START</span> <span class="o">=</span> <span class="n">datetime</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-<span class="n">FIGURES</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-
-<span class="n">stations</span> <span class="o">=</span> <span class="n">station_areas</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">PROCESSED</span> <span class="o">/</span> <span class="s2">"stations.parquet"</span><span class="p">),</span> <span class="n">BOUNDARIES</span><span class="p">)</span>
-<span class="n">land</span> <span class="o">=</span> <span class="n">land_outline</span><span class="p">(</span><span class="n">BOUNDARIES</span><span class="p">)</span>
-<span class="c1"># a weekday that is not a public holiday; holidays ride like weekends</span>
-<span class="n">is_workday</span> <span class="o">=</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">weekday</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">()</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span>
-    <span class="n">HOLIDAYS</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=171a6cbe">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<p>Hourly counts per station for the development year, built one month at a time.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=cb5e5377">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">dev_hours</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">pl</span><span class="o">.</span><span class="n">scan_parquet</span><span class="p">(</span><span class="n">PROCESSED</span> <span class="o">/</span> <span class="s2">"bins"</span> <span class="o">/</span> <span class="s2">"*.parquet"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"slot"</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">TEST_START</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="n">hour</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"slot"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">truncate</span><span class="p">(</span><span class="s2">"1h"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">,</span> <span class="s2">"ends"</span><span class="p">,</span> <span class="s2">"member_starts"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int32</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">net_flow</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"ends"</span><span class="p">)</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">collect</span><span class="p">(</span><span class="n">engine</span><span class="o">=</span><span class="s2">"streaming"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="n">day_type</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="n">is_workday</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">then</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"workday"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">otherwise</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"weekend or holiday"</span><span class="p">))</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-<span class="n">dev_days</span> <span class="o">=</span> <span class="n">dev_hours</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">()</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span>
-<span class="n">workdays</span> <span class="o">=</span> <span class="n">dev_days</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
-    <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">weekday</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span><span class="n">HOLIDAYS</span><span class="p">)</span>
-<span class="p">)</span><span class="o">.</span><span class="n">height</span>
-<span class="nb">print</span><span class="p">(</span>
-    <span class="sa">f</span><span class="s2">"dev days </span><span class="si">{</span><span class="n">dev_days</span><span class="o">.</span><span class="n">height</span><span class="si">}</span><span class="s2">, workdays </span><span class="si">{</span><span class="n">workdays</span><span class="si">}</span><span class="s2">, station-hours with trips </span><span class="si">{</span><span class="n">dev_hours</span><span class="o">.</span><span class="n">height</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2">"</span>
-<span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=b43e9ce8">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-1:-the-daily-rhythm-by-rider-type">Figure 1: the daily rhythm by rider type<a class="anchor-link" href="#Figure-1:-the-daily-rhythm-by-rider-type">¶</a></h2>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=96f7dc28">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">by_hour</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dev_hours</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span>
-        <span class="s2">"day_type"</span><span class="p">,</span> <span class="n">date</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">(),</span> <span class="n">hour_of_day</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span>
-        <span class="n">member</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"member_starts"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span>
-        <span class="n">casual</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"member_starts"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(),</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"day_type"</span><span class="p">,</span> <span class="s2">"hour_of_day"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"member"</span><span class="p">,</span> <span class="s2">"casual"</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">unpivot</span><span class="p">(</span>
-        <span class="n">index</span><span class="o">=</span><span class="p">[</span><span class="s2">"day_type"</span><span class="p">,</span> <span class="s2">"hour_of_day"</span><span class="p">],</span> <span class="n">variable_name</span><span class="o">=</span><span class="s2">"rider"</span><span class="p">,</span> <span class="n">value_name</span><span class="o">=</span><span class="s2">"starts"</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"day_type"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Enum</span><span class="p">([</span><span class="s2">"workday"</span><span class="p">,</span> <span class="s2">"weekend or holiday"</span><span class="p">])),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rider"</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
-            <span class="p">{</span><span class="s2">"member"</span><span class="p">:</span> <span class="s2">"annual members"</span><span class="p">,</span> <span class="s2">"casual"</span><span class="p">:</span> <span class="s2">"casual riders"</span><span class="p">}</span>
-        <span class="p">),</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span>
-    <span class="n">by_hour</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour_of_day"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">([</span><span class="mi">8</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">17</span><span class="p">]))</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span>
-        <span class="s2">"day_type"</span><span class="p">,</span> <span class="s2">"rider"</span><span class="p">,</span> <span class="s2">"hour_of_day"</span>
-    <span class="p">)</span>
+<span class="n">TEST_START</span> <span class="o">=</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="c1"># riding hours: weather at 03:00 hardly changes anyone's plans</span>
+<span class="n">DAYTIME</span> <span class="o">=</span> <span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">21</span><span class="p">)</span>
+<span class="c1"># above this, more warmth stops bringing more riders (the dev-year scatter levels off here)</span>
+<span class="n">WARM_C</span> <span class="o">=</span> <span class="mi">22</span>
+<span class="c1"># no time trend: fitted on one year it picks up the season rather than growth, and with it the</span>
+<span class="c1"># test-year R² fell from 0.87 to 0.71</span>
+<span class="n">FORMULA</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"np.log(trips) ~ temperature_c + warm_excess_c + wet_hours + snow_3_days_cm + wind_kmh"</span>
+    <span class="s2">" + weekend_or_holiday + year_end"</span>
 <span class="p">)</span>
 
-<span class="n">figure_1</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">ggplot</span><span class="p">(</span><span class="n">by_hour</span><span class="p">,</span> <span class="n">aes</span><span class="p">(</span><span class="s2">"hour_of_day"</span><span class="p">,</span> <span class="s2">"starts"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"rider"</span><span class="p">))</span>
-    <span class="o">+</span> <span class="n">geom_line</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">facet_wrap</span><span class="p">(</span><span class="s2">"day_type"</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_color_manual</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"annual members"</span><span class="p">:</span> <span class="n">BLUE</span><span class="p">,</span> <span class="s2">"casual riders"</span><span class="p">:</span> <span class="n">ORANGE</span><span class="p">})</span>
-    <span class="o">+</span> <span class="n">scale_x_continuous</span><span class="p">(</span>
-        <span class="n">breaks</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hour</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">:00"</span> <span class="k">for</span> <span class="n">hour</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">3</span><span class="p">)]</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_y_continuous</span><span class="p">(</span><span class="n">labels</span><span class="o">=</span><span class="k">lambda</span> <span class="n">values</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">value</span><span class="si">:</span><span class="s2">,.0f</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">values</span><span class="p">])</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"Members ride at the rush hours on workdays; everyone rides midday at weekends"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="s2">"hour the trip started"</span><span class="p">,</span>
-        <span class="n">y</span><span class="o">=</span><span class="s2">"trips started per hour"</span><span class="p">,</span>
-        <span class="n">color</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span><span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">6.7</span><span class="p">,</span> <span class="mf">2.7</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">figure_1</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig1-daily-rhythm.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=394aca92">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-2:-where-bikes-drain-and-pile-up-in-the-rush-hours">Figure 2: where bikes drain and pile up in the rush hours<a class="anchor-link" href="#Figure-2:-where-bikes-drain-and-pile-up-in-the-rush-hours">¶</a></h2><p><code>rush_net_flow</code>: bikes a station gains over the three hours of a rush, per workday.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=239f3b47">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">open_workdays</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">PROCESSED</span> <span class="o">/</span> <span class="s2">"station_days.parquet"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">filter</span><span class="p">(</span>
-        <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">TEST_START</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
-        <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">weekday</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">)</span>
-        <span class="o">&amp;</span> <span class="o">~</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span><span class="n">HOLIDAYS</span><span class="p">)</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">len</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"open_workdays"</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">rush</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dev_hours</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_workday</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="n">rush</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">9</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">then</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"morning rush, 07:00 to 10:00"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">18</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">then</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"evening rush, 16:00 to 19:00"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Enum</span><span class="p">([</span><span class="s2">"morning rush, 07:00 to 10:00"</span><span class="p">,</span> <span class="s2">"evening rush, 16:00 to 19:00"</span><span class="p">]))</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">drop_nulls</span><span class="p">(</span><span class="s2">"rush"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"rush"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">open_workdays</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">rush_net_flow</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span> <span class="o">/</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"open_workdays"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">stations</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span>
-    <span class="n">rush</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"rush"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span>
-        <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="o">-</span><span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"losing_5_plus"</span><span class="p">),</span>
-        <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"gaining_5_plus"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"largest_loss"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"largest_gain"</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"rush"</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span>
-    <span class="n">rush</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"rush"</span><span class="p">,</span> <span class="s2">"borough"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="s2">"rush"</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="s2">"borough"</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="s2">"rush_net_flow"</span><span class="p">)</span>
-<span class="p">)</span>
 
-<span class="n">figure_2</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">on_map</span><span class="p">(</span><span class="n">ggplot</span><span class="p">(),</span> <span class="n">land</span><span class="p">,</span> <span class="n">lng</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mf">74.07</span><span class="p">,</span> <span class="o">-</span><span class="mf">73.87</span><span class="p">),</span> <span class="n">lat</span><span class="o">=</span><span class="p">(</span><span class="mf">40.64</span><span class="p">,</span> <span class="mf">40.86</span><span class="p">))</span>
-    <span class="o">+</span> <span class="n">geom_point</span><span class="p">(</span>
-        <span class="n">aes</span><span class="p">(</span><span class="s2">"lng"</span><span class="p">,</span> <span class="s2">"lat"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"rush_net_flow"</span><span class="p">),</span>
-        <span class="n">data</span><span class="o">=</span><span class="n">rush</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="o">-</span><span class="mi">15</span><span class="p">,</span> <span class="mi">15</span><span class="p">))</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span>
-            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"rush_net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span>
-        <span class="p">),</span>
-        <span class="n">size</span><span class="o">=</span><span class="mf">0.55</span><span class="p">,</span>
-        <span class="n">stroke</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">daily_demand</span><span class="p">(</span><span class="n">bins_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">raw_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One row per day, October 2024 to September 2026: trips started, the day's weather in</span>
+<span class="sd">    riding hours and the calendar, with `is_test` marking the test year. Days without a single</span>
+<span class="sd">    trip are kept, with `trips` 0."""</span>
+    <span class="n">trips</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">scan_parquet</span><span class="p">(</span><span class="n">bins_dir</span> <span class="o">/</span> <span class="s2">"*.parquet"</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">date</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"slot"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int64</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">collect</span><span class="p">()</span>
     <span class="p">)</span>
-    <span class="o">+</span> <span class="n">facet_wrap</span><span class="p">(</span><span class="s2">"rush"</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_color_gradient2</span><span class="p">(</span>
-        <span class="n">low</span><span class="o">=</span><span class="n">LOSING_RED</span><span class="p">,</span>
-        <span class="n">mid</span><span class="o">=</span><span class="n">NEUTRAL</span><span class="p">,</span>
-        <span class="n">high</span><span class="o">=</span><span class="n">BLUE</span><span class="p">,</span>
-        <span class="n">midpoint</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-        <span class="n">limits</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">15</span><span class="p">,</span> <span class="mi">15</span><span class="p">),</span>
-        <span class="n">breaks</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="mi">15</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">15</span><span class="p">],</span>
-        <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="s2">"-15 or more"</span><span class="p">,</span> <span class="s2">"0"</span><span class="p">,</span> <span class="s2">"+15 or more"</span><span class="p">],</span>
+    <span class="n">hourly_weather</span> <span class="o">=</span> <span class="n">fetch_weather</span><span class="p">(</span><span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">30</span><span class="p">),</span> <span class="n">raw_dir</span><span class="p">)</span>
+    <span class="n">daytime</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="o">*</span><span class="n">DAYTIME</span><span class="p">)</span>
+    <span class="n">weather</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">hourly_weather</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">date</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">agg</span><span class="p">(</span>
+            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">daytime</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">),</span>
+            <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"precipitation_mm"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">daytime</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mf">0.5</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"wet_hours"</span><span class="p">),</span>
+            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">),</span>
+            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"wind_kmh"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">daytime</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"wind_kmh"</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span>
+        <span class="c1"># snow keeps riders off for days after it falls, while it lies on the bike lanes</span>
+        <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
+            <span class="n">snow_3_days_cm</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">)</span><span class="o">.</span><span class="n">rolling_sum</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">min_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="p">)</span>
     <span class="p">)</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"Mornings drain the residential areas into Midtown and downtown; evenings run it back"</span><span class="p">,</span>
-        <span class="n">color</span><span class="o">=</span><span class="s2">"bikes gained per rush  "</span><span class="p">,</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">weather</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">trips</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"date"</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s2">"left"</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span><span class="o">.</span><span class="n">fill_null</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
+        <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
+            <span class="n">weekend_or_holiday</span><span class="o">=</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">weekday</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">5</span><span class="p">)</span> <span class="o">|</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span><span class="n">HOLIDAYS</span><span class="p">)</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int8</span><span class="p">),</span>
+            <span class="c1"># 24 December to 1 January: offices thin out even on weekdays</span>
+            <span class="n">year_end</span><span class="o">=</span><span class="p">(</span>
+                <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">month</span><span class="p">()</span> <span class="o">==</span> <span class="mi">12</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">day</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="mi">24</span><span class="p">))</span>
+                <span class="o">|</span> <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">month</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">day</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int8</span><span class="p">),</span>
+            <span class="n">warm_excess_c</span><span class="o">=</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">)</span> <span class="o">-</span> <span class="n">WARM_C</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">lower_bound</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span>
+            <span class="n">is_test</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">TEST_START</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">MAP_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span><span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">6.7</span><span class="p">,</span> <span class="mf">4.9</span><span class="p">),</span> <span class="n">legend_key_width</span><span class="o">=</span><span class="mi">110</span><span class="p">,</span> <span class="n">legend_key_height</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="n">figure_2</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig2-rush-map.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=568b53ae">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-3:-the-neighbourhood-clock">Figure 3: the neighbourhood clock<a class="anchor-link" href="#Figure-3:-the-neighbourhood-clock">¶</a></h2><p>Average workday net flow per hour, added over the stations of each neighbourhood. The 24
-neighbourhoods with the largest swings, ordered from the one losing most in the morning rush.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=2bd5d11b">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">neighbourhood_profile</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dev_hours</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_workday</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">stations</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"neighbourhood"</span><span class="p">,</span> <span class="s2">"borough"</span><span class="p">),</span> <span class="n">on</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"neighbourhood"</span><span class="p">,</span> <span class="s2">"borough"</span><span class="p">,</span> <span class="n">hour_of_day</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span> <span class="n">workdays</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="n">largest</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">neighbourhood_profile</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"neighbourhood"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"swing"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">top_k</span><span class="p">(</span><span class="mi">24</span><span class="p">,</span> <span class="n">by</span><span class="o">=</span><span class="s2">"swing"</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="n">row_order</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">neighbourhood_profile</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour_of_day"</span><span class="p">)</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">9</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">largest</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"neighbourhood"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"neighbourhood"</span><span class="p">,</span> <span class="s2">"borough"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"morning"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"morning"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="c1"># "Midtown South-Flatiron-Union Square" reads as "Midtown South, Flatiron"</span>
-        <span class="n">label</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"neighbourhood"</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"-"</span><span class="p">)</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">head</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">list</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">", "</span><span class="p">)</span>
-        <span class="o">+</span> <span class="s2">" ("</span>
-        <span class="o">+</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"borough"</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-        <span class="o">+</span> <span class="s2">")"</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-<span class="n">clock</span> <span class="o">=</span> <span class="n">neighbourhood_profile</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
-    <span class="n">row_order</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="p">[</span><span class="s2">"neighbourhood"</span><span class="p">,</span> <span class="s2">"borough"</span><span class="p">]</span>
-<span class="p">)</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"label"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Enum</span><span class="p">(</span><span class="n">row_order</span><span class="p">[</span><span class="s2">"label"</span><span class="p">]</span><span class="o">.</span><span class="n">to_list</span><span class="p">()[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])))</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">row_order</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">"label"</span><span class="p">,</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"morning"</span><span class="p">)</span><span class="o">.</span><span class="n">round</span><span class="p">(</span><span class="mi">0</span><span class="p">)))</span>
 
-<span class="n">figure_3</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">ggplot</span><span class="p">(</span>
-        <span class="n">clock</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="o">-</span><span class="mi">120</span><span class="p">,</span> <span class="mi">120</span><span class="p">)),</span>
-        <span class="n">aes</span><span class="p">(</span><span class="s2">"hour_of_day"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">,</span> <span class="n">fill</span><span class="o">=</span><span class="s2">"net_flow"</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_tile</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="s2">"white"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.15</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_fill_gradient2</span><span class="p">(</span>
-        <span class="n">low</span><span class="o">=</span><span class="n">LOSING_RED</span><span class="p">,</span>
-        <span class="n">mid</span><span class="o">=</span><span class="n">NEUTRAL</span><span class="p">,</span>
-        <span class="n">high</span><span class="o">=</span><span class="n">BLUE</span><span class="p">,</span>
-        <span class="n">midpoint</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
-        <span class="n">limits</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">120</span><span class="p">,</span> <span class="mi">120</span><span class="p">),</span>
-        <span class="n">breaks</span><span class="o">=</span><span class="p">[</span><span class="o">-</span><span class="mi">120</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">120</span><span class="p">],</span>
-        <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="s2">"-120 or more"</span><span class="p">,</span> <span class="s2">"0"</span><span class="p">,</span> <span class="s2">"+120 or more"</span><span class="p">],</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_x_continuous</span><span class="p">(</span>
-        <span class="n">breaks</span><span class="o">=</span><span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
-        <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hour</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">:00"</span> <span class="k">for</span> <span class="n">hour</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">3</span><span class="p">)],</span>
-        <span class="n">expand</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"Homes empty and offices fill before 10:00; the evening rush runs it back"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="s2">"hour of the workday"</span><span class="p">,</span>
-        <span class="n">y</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-        <span class="n">fill</span><span class="o">=</span><span class="s2">"bikes gained per hour"</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span>
-        <span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">6.7</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">),</span>
-        <span class="n">axis_text_y</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">6.5</span><span class="p">),</span>
-        <span class="n">legend_key_width</span><span class="o">=</span><span class="mi">110</span><span class="p">,</span>
-        <span class="n">legend_key_height</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-<span class="n">figure_3</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig3-neighbourhood-clock.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=965707dd">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-4:-the-imbalance-is-a-habit">Figure 4: the imbalance is a habit<a class="anchor-link" href="#Figure-4:-the-imbalance-is-a-habit">¶</a></h2><p>Each station's morning-rush net flow averaged over odd ISO weeks against even ones.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=8a38e770">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">dev_workdays</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">PROCESSED</span> <span class="o">/</span> <span class="s2">"station_days.parquet"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
-    <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">TEST_START</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
-    <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">weekday</span><span class="p">()</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">)</span>
-    <span class="o">&amp;</span> <span class="o">~</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span><span class="n">HOLIDAYS</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="n">open_workdays_by_half</span> <span class="o">=</span> <span class="n">dev_workdays</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span>
-    <span class="s2">"station_id"</span><span class="p">,</span>
-    <span class="n">half</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"service_day"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">week</span><span class="p">()</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">then</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"odd"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">otherwise</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"even"</span><span class="p">)),</span>
-<span class="p">)</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">len</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"days"</span><span class="p">))</span>
-<span class="n">halves</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dev_hours</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_workday</span> <span class="o">&amp;</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">9</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="n">half</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">week</span><span class="p">()</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">then</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"odd"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">otherwise</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"even"</span><span class="p">))</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"half"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">open_workdays_by_half</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="p">[</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"half"</span><span class="p">])</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">per_day</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span> <span class="o">/</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"days"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">pivot</span><span class="p">(</span><span class="s2">"half"</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="s2">"per_day"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">drop_nulls</span><span class="p">()</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span>
-    <span class="n">halves</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">corr</span><span class="p">(</span><span class="s2">"odd"</span><span class="p">,</span> <span class="s2">"even"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"correlation"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">corr</span><span class="p">(</span><span class="s2">"odd"</span><span class="p">,</span> <span class="s2">"even"</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">"spearman"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"rank_correlation"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">len</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"stations"</span><span class="p">),</span>
-    <span class="p">)</span>
-<span class="p">)</span>
 
-<span class="n">figure_4</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">ggplot</span><span class="p">(</span><span class="n">halves</span><span class="p">,</span> <span class="n">aes</span><span class="p">(</span><span class="s2">"odd"</span><span class="p">,</span> <span class="s2">"even"</span><span class="p">))</span>
-    <span class="o">+</span> <span class="n">geom_abline</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">CONTEXT</span><span class="p">,</span> <span class="n">linetype</span><span class="o">=</span><span class="s2">"dashed"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_point</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">BLUE</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.35</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.8</span><span class="p">,</span> <span class="n">stroke</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"The morning imbalance repeats week after week"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="s2">"bikes gained per morning rush, odd weeks"</span><span class="p">,</span>
-        <span class="n">y</span><span class="o">=</span><span class="s2">"bikes gained per morning rush, even weeks"</span><span class="p">,</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fit_demand_model</span><span class="p">(</span>
+    <span class="n">days</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">RegressionResultsWrapper</span><span class="p">,</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Fits `FORMULA` on the development-year rows of `days` and returns the model with `days`</span>
+<span class="sd">    plus `predicted`, the forecast trips (e to the fitted log, so the median day)."""</span>
+    <span class="c1"># statsmodels leaves `fit` untyped</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">cast</span><span class="p">(</span>
+        <span class="n">RegressionResultsWrapper</span><span class="p">,</span>
+        <span class="n">smf</span><span class="o">.</span><span class="n">ols</span><span class="p">(</span><span class="n">FORMULA</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">days</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="o">~</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"is_test"</span><span class="p">))</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">())</span><span class="o">.</span><span class="n">fit</span><span class="p">(),</span>
     <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span><span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">3.25</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">),</span> <span class="n">plot_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">8.5</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">figure_4</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig4-habit.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=e1fc81db">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-5:-a-single-day-is-noisier-than-the-average">Figure 5: a single day is noisier than the average<a class="anchor-link" href="#Figure-5:-a-single-day-is-noisier-than-the-average">¶</a></h2><p>Each station's morning-rush net flow on one workday against its average over the 10 workdays
-before. A schedule has to be set the night before, so this is the error it starts from.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=d59741d6">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">morning_days</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">dev_workdays</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"service_day"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">join</span><span class="p">(</span>
-        <span class="n">dev_hours</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">is_workday</span> <span class="o">&amp;</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">9</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="n">service_day</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
-        <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span>
-        <span class="n">on</span><span class="o">=</span><span class="p">[</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"service_day"</span><span class="p">],</span>
-        <span class="n">how</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span>
+    <span class="n">predicted</span> <span class="o">=</span> <span class="n">days</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
+        <span class="n">predicted</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">days</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">()))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
     <span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">fill_null</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"service_day"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="n">last_10</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">shift</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">rolling_mean</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="o">.</span><span class="n">over</span><span class="p">(</span><span class="s2">"station_id"</span><span class="p">)</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">drop_nulls</span><span class="p">(</span><span class="s2">"last_10"</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span>
-    <span class="n">morning_days</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">corr</span><span class="p">(</span><span class="s2">"last_10"</span><span class="p">,</span> <span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"correlation"</span><span class="p">),</span>
-        <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"last_10"</span><span class="p">))</span><span class="o">.</span><span class="n">abs</span><span class="p">())</span>
-        <span class="o">.</span><span class="n">median</span><span class="p">()</span>
-        <span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"median_abs_error"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span><span class="o">.</span><span class="n">median</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"median_abs_flow"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">len</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"station_days"</span><span class="p">),</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-
-<span class="n">figure_5</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">ggplot</span><span class="p">(</span>
-        <span class="n">morning_days</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="mi">30_000</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>
-            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"last_10"</span><span class="p">)</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="o">-</span><span class="mi">60</span><span class="p">,</span> <span class="mi">110</span><span class="p">)</span>
-            <span class="o">&amp;</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="o">-</span><span class="mi">60</span><span class="p">,</span> <span class="mi">110</span><span class="p">)</span>
-        <span class="p">),</span>
-        <span class="n">aes</span><span class="p">(</span><span class="s2">"last_10"</span><span class="p">,</span> <span class="s2">"net_flow"</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_abline</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">CONTEXT</span><span class="p">,</span> <span class="n">linetype</span><span class="o">=</span><span class="s2">"dashed"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_point</span><span class="p">(</span><span class="n">color</span><span class="o">=</span><span class="n">BLUE</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.12</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">stroke</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"One day scatters around the station's habit"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="s2">"average over the 10 workdays before"</span><span class="p">,</span>
-        <span class="n">y</span><span class="o">=</span><span class="s2">"bikes gained that morning rush"</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span><span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">3.25</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">),</span> <span class="n">plot_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">8.5</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">figure_5</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig5-single-day.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="n">predicted</span>
 </pre></div>
 </div>
 </div>

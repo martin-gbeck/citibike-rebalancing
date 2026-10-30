@@ -3,7 +3,7 @@
 <html lang="en">
 <head><meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>04-demand_model</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
+<title>06-lib-data_schemas</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <style type="text/css">
     pre { line-height: 125%; }
 td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
@@ -7795,21 +7795,7 @@ a.anchor-link {
 </style>
 <!-- End of mermaid configuration --></head>
 <body class="jp-Notebook" data-jp-theme-light="true" data-jp-theme-name="JupyterLab Light">
-<main>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=fce7623a">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="How-many-people-ride-tomorrow:-a-daily-demand-model">How many people ride tomorrow: a daily demand model<a class="anchor-link" href="#How-many-people-ride-tomorrow:-a-daily-demand-model">¶</a></h1><p>A linear regression of the log of each day's trips on weather and calendar, fitted on the
-development year and scored on the test year. It explains what moves volume, and its forecast
-scales the rebalancing targets on days that will be busier or quieter than the days before.
-Writes <code>data/processed/daily_demand.parquet</code> and figures 6 and 7.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=3e01973c">
+<main><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=3e30716c">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7817,256 +7803,64 @@ Writes <code>data/processed/daily_demand.parquet</code> and figures 6 and 7.</p>
 <div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="sd">"""The data model: one table of stations and one of station-hours, New York local time throughout.</span>
 
-<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"POLARS_MAX_THREADS"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"6"</span>
+<span class="sd">Station-hours run to about 40 million rows, so counts are 32-bit integers and weather 32-bit floats.</span>
+<span class="sd">"""</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandera.polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pa</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">statsmodels.formula.api</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">smf</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">plotnine</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">aes</span><span class="p">,</span>
-    <span class="n">annotate</span><span class="p">,</span>
-    <span class="n">element_text</span><span class="p">,</span>
-    <span class="n">geom_errorbarh</span><span class="p">,</span>
-    <span class="n">geom_line</span><span class="p">,</span>
-    <span class="n">geom_point</span><span class="p">,</span>
-    <span class="n">geom_vline</span><span class="p">,</span>
-    <span class="n">ggplot</span><span class="p">,</span>
-    <span class="n">labs</span><span class="p">,</span>
-    <span class="n">scale_color_manual</span><span class="p">,</span>
-    <span class="n">scale_x_date</span><span class="p">,</span>
-    <span class="n">scale_y_continuous</span><span class="p">,</span>
-    <span class="n">theme</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandera.api.polars.model_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseConfig</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">lib.chart_style</span><span class="w"> </span><span class="kn">import</span> <span class="n">BLUE</span><span class="p">,</span> <span class="n">CONTEXT</span><span class="p">,</span> <span class="n">FIGURES</span><span class="p">,</span> <span class="n">INK</span><span class="p">,</span> <span class="n">LOSING_RED</span><span class="p">,</span> <span class="n">REPORT_THEME</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">lib.fetching</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_weather</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">lib.rebalancing</span><span class="w"> </span><span class="kn">import</span> <span class="n">HOLIDAYS</span>
+<span class="c1"># a box around New York City and Jersey City; a station outside it has broken coordinates</span>
+<span class="n">LAT_MIN</span><span class="p">,</span> <span class="n">LAT_MAX</span> <span class="o">=</span> <span class="mf">40.45</span><span class="p">,</span> <span class="mf">40.95</span>
+<span class="n">LNG_MIN</span><span class="p">,</span> <span class="n">LNG_MAX</span> <span class="o">=</span> <span class="o">-</span><span class="mf">74.30</span><span class="p">,</span> <span class="o">-</span><span class="mf">73.65</span>
 
-<span class="n">PROCESSED</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"data/processed"</span><span class="p">)</span>
-<span class="n">TEST_START</span> <span class="o">=</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-<span class="c1"># riding hours: weather at 03:00 hardly changes anyone's plans</span>
-<span class="n">DAYTIME</span> <span class="o">=</span> <span class="p">(</span><span class="mi">7</span><span class="p">,</span> <span class="mi">21</span><span class="p">)</span>
-<span class="c1"># above this, more warmth stops bringing more riders (the dev-year scatter levels off here)</span>
-<span class="n">WARM_C</span> <span class="o">=</span> <span class="mi">22</span>
 
-<span class="n">trips</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">pl</span><span class="o">.</span><span class="n">scan_parquet</span><span class="p">(</span><span class="n">PROCESSED</span> <span class="o">/</span> <span class="s2">"bins"</span> <span class="o">/</span> <span class="s2">"*.parquet"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">date</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"slot"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int64</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">collect</span><span class="p">()</span>
-<span class="p">)</span>
-<span class="n">hourly_weather</span> <span class="o">=</span> <span class="n">fetch_weather</span><span class="p">(</span><span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">30</span><span class="p">),</span> <span class="n">Path</span><span class="p">(</span><span class="s2">"data/raw"</span><span class="p">))</span>
-<span class="n">daytime</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">hour</span><span class="p">()</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="o">*</span><span class="n">DAYTIME</span><span class="p">)</span>
-<span class="n">weather</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">hourly_weather</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">date</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">date</span><span class="p">())</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">daytime</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">),</span>
-        <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"precipitation_mm"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">daytime</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mf">0.5</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"wet_hours"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"wind_kmh"</span><span class="p">)</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">daytime</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"wind_kmh"</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span>
-    <span class="c1"># snow keeps riders off for days after it falls, while it lies on the bike lanes</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">snow_3_days_cm</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">)</span><span class="o">.</span><span class="n">rolling_sum</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="n">min_samples</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">days</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">weather</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">trips</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="s2">"date"</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s2">"left"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span><span class="o">.</span><span class="n">fill_null</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">30</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-        <span class="n">weekend_or_holiday</span><span class="o">=</span><span class="p">(</span>
-            <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">weekday</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">5</span><span class="p">)</span> <span class="o">|</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">is_in</span><span class="p">(</span><span class="n">HOLIDAYS</span><span class="p">)</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int8</span><span class="p">),</span>
-        <span class="c1"># 24 December to 1 January: offices thin out even on weekdays</span>
-        <span class="n">year_end</span><span class="o">=</span><span class="p">(</span>
-            <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">month</span><span class="p">()</span> <span class="o">==</span> <span class="mi">12</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">day</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="mi">24</span><span class="p">))</span>
-            <span class="o">|</span> <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">month</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">day</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">))</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int8</span><span class="p">),</span>
-        <span class="n">warm_excess_c</span><span class="o">=</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">)</span> <span class="o">-</span> <span class="n">WARM_C</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">lower_bound</span><span class="o">=</span><span class="mi">0</span><span class="p">),</span>
-        <span class="n">is_test</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"date"</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">TEST_START</span><span class="p">,</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-<span class="c1"># 23 February 2026: the system was shut for a snowstorm, no trips at all; a model of riders'</span>
-<span class="c1"># choices cannot explain a closure, so the day is left out of fitting and scoring</span>
-<span class="n">closed</span> <span class="o">=</span> <span class="n">days</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">closed</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">"date"</span><span class="p">,</span> <span class="s2">"snowfall_cm"</span><span class="p">,</span> <span class="s2">"snow_3_days_cm"</span><span class="p">))</span>
-<span class="n">days</span> <span class="o">=</span> <span class="n">days</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Station</span><span class="p">(</span><span class="n">pa</span><span class="o">.</span><span class="n">DataFrameModel</span><span class="p">):</span>
+    <span class="c1"># fmt: off</span>
+    <span class="n">station_id</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Categorical</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>              <span class="c1"># Citi Bike's station id as the trip files write it, e.g. 7293.10</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>                                                       <span class="c1"># the name most trips used for it</span>
+    <span class="n">lat</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="n">LAT_MIN</span><span class="p">,</span> <span class="n">le</span><span class="o">=</span><span class="n">LAT_MAX</span><span class="p">)</span>                   <span class="c1"># latitude, median over its trips</span>
+    <span class="n">lng</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="n">LNG_MIN</span><span class="p">,</span> <span class="n">le</span><span class="o">=</span><span class="n">LNG_MAX</span><span class="p">)</span>                   <span class="c1"># longitude, median over its trips</span>
+    <span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">gt</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>                   <span class="c1"># docks in the live feed of 2026-10-22, matched by id or else by name; null if not in the feed</span>
+    <span class="c1"># fmt: on</span>
 
-<span class="c1"># no time trend: fitted on one year it picks up the season rather than growth, and with it the</span>
-<span class="c1"># test-year R² fell from 0.87 to 0.71</span>
-<span class="n">formula</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="s2">"np.log(trips) ~ temperature_c + warm_excess_c + wet_hours + snow_3_days_cm + wind_kmh"</span>
-    <span class="s2">" + weekend_or_holiday + year_end"</span>
-<span class="p">)</span>
-<span class="n">dev_days</span> <span class="o">=</span> <span class="n">days</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="o">~</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"is_test"</span><span class="p">))</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">()</span>
-<span class="n">model</span> <span class="o">=</span> <span class="n">smf</span><span class="o">.</span><span class="n">ols</span><span class="p">(</span><span class="n">formula</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">dev_days</span><span class="p">)</span><span class="o">.</span><span class="n">fit</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">summary</span><span class="p">()</span><span class="o">.</span><span class="n">tables</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">class</span><span class="w"> </span><span class="nc">Config</span><span class="p">(</span><span class="n">BaseConfig</span><span class="p">):</span>  <span class="c1"># ty: ignore[invalid-mutable-override]</span>
+        <span class="n">coerce</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">strict</span> <span class="o">=</span> <span class="s2">"filter"</span>
 
-<span class="n">days</span> <span class="o">=</span> <span class="n">days</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-    <span class="n">predicted</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">days</span><span class="o">.</span><span class="n">to_pandas</span><span class="p">()))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
-<span class="p">)</span>
-<span class="n">scores</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">days</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="s2">"is_test"</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">agg</span><span class="p">(</span>
-        <span class="p">(</span>
-            <span class="mi">1</span>
-            <span class="o">-</span> <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"predicted"</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-            <span class="o">/</span> <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span><span class="o">.</span><span class="n">mean</span><span class="p">())</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
-        <span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"r2"</span><span class="p">),</span>
-        <span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">)</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"predicted"</span><span class="p">))</span><span class="o">.</span><span class="n">abs</span><span class="p">()</span> <span class="o">/</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"trips"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">median</span><span class="p">()</span>
-        <span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"median_abs_pct_error"</span><span class="p">),</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">len</span><span class="p">()</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"days"</span><span class="p">),</span>
-    <span class="p">)</span>
-    <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"is_test"</span><span class="p">)</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
-<span class="n">days</span><span class="o">.</span><span class="n">write_parquet</span><span class="p">(</span><span class="n">PROCESSED</span> <span class="o">/</span> <span class="s2">"daily_demand.parquet"</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0b948a24">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-6:-the-model-against-the-two-years">Figure 6: the model against the two years<a class="anchor-link" href="#Figure-6:-the-model-against-the-two-years">¶</a></h2>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=e84e831b">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">long</span> <span class="o">=</span> <span class="n">days</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="s2">"date"</span><span class="p">,</span> <span class="n">actual</span><span class="o">=</span><span class="s2">"trips"</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">"predicted"</span><span class="p">)</span><span class="o">.</span><span class="n">unpivot</span><span class="p">(</span>
-    <span class="n">index</span><span class="o">=</span><span class="s2">"date"</span><span class="p">,</span> <span class="n">variable_name</span><span class="o">=</span><span class="s2">"series"</span><span class="p">,</span> <span class="n">value_name</span><span class="o">=</span><span class="s2">"trips"</span>
-<span class="p">)</span>
-<span class="n">test_r2</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"is_test"</span><span class="p">))[</span><span class="s2">"r2"</span><span class="p">]</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
-<span class="n">figure_6</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">ggplot</span><span class="p">(</span><span class="n">long</span><span class="p">,</span> <span class="n">aes</span><span class="p">(</span><span class="s2">"date"</span><span class="p">,</span> <span class="s2">"trips"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"series"</span><span class="p">))</span>
-    <span class="o">+</span> <span class="n">geom_line</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">0.35</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_vline</span><span class="p">(</span><span class="n">xintercept</span><span class="o">=</span><span class="n">TEST_START</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">INK</span><span class="p">,</span> <span class="n">linetype</span><span class="o">=</span><span class="s2">"dashed"</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">annotate</span><span class="p">(</span>
-        <span class="s2">"text"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span>  <span class="c1"># ty: ignore[invalid-argument-type]  plotnine takes dates on a date axis</span>
-        <span class="n">y</span><span class="o">=</span><span class="mi">232_000</span><span class="p">,</span>
-        <span class="n">label</span><span class="o">=</span><span class="s2">"fitted"</span><span class="p">,</span>
-        <span class="n">ha</span><span class="o">=</span><span class="s2">"right"</span><span class="p">,</span>
-        <span class="n">size</span><span class="o">=</span><span class="mf">6.5</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">annotate</span><span class="p">(</span>
-        <span class="s2">"text"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span>  <span class="c1"># ty: ignore[invalid-argument-type]</span>
-        <span class="n">y</span><span class="o">=</span><span class="mi">232_000</span><span class="p">,</span>
-        <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">"scored: R² </span><span class="si">{</span><span class="n">test_r2</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
-        <span class="n">ha</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span>
-        <span class="n">size</span><span class="o">=</span><span class="mf">6.5</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_color_manual</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"actual"</span><span class="p">:</span> <span class="n">CONTEXT</span><span class="p">,</span> <span class="s2">"model"</span><span class="p">:</span> <span class="n">BLUE</span><span class="p">})</span>
-    <span class="o">+</span> <span class="n">scale_x_date</span><span class="p">(</span><span class="n">date_labels</span><span class="o">=</span><span class="s2">"%b %y"</span><span class="p">,</span> <span class="n">date_breaks</span><span class="o">=</span><span class="s2">"6 months"</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_y_continuous</span><span class="p">(</span>
-        <span class="n">labels</span><span class="o">=</span><span class="k">lambda</span> <span class="n">values</span><span class="p">:</span> <span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">1000</span><span class="si">:</span><span class="s2">,.0f</span><span class="si">}</span><span class="s2">k"</span> <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">values</span><span class="p">]</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"Weather and calendar explain most daily swings"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-        <span class="n">y</span><span class="o">=</span><span class="s2">"trips per day"</span><span class="p">,</span>
-        <span class="n">color</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span>
-        <span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">3.35</span><span class="p">,</span> <span class="mf">2.6</span><span class="p">),</span>
-        <span class="n">plot_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">8.5</span><span class="p">),</span>
-        <span class="n">axis_text_x</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">6.5</span><span class="p">),</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-<span class="n">figure_6</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig6-demand-model.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</pre></div>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=524be17e">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
-</div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Figure-7:-what-each-factor-does-to-a-day's-trips">Figure 7: what each factor does to a day's trips<a class="anchor-link" href="#Figure-7:-what-each-factor-does-to-a-day's-trips">¶</a></h2><p>Coefficients turned into percentage changes, with 95% confidence intervals.</p>
-</div>
-</div>
-</div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=da251975">
-<div class="jp-Cell-inputWrapper" tabindex="0">
-<div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
-</div>
-<div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
-<div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
-<div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="n">effects</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="s2">"+5 °C, below 22 °C"</span><span class="p">:</span> <span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
-    <span class="s2">"+5 °C, above 22 °C"</span><span class="p">:</span> <span class="p">((</span><span class="s2">"temperature_c"</span><span class="p">,</span> <span class="s2">"warm_excess_c"</span><span class="p">),</span> <span class="mi">5</span><span class="p">),</span>
-    <span class="s2">"+1 wet hour in the day"</span><span class="p">:</span> <span class="p">(</span><span class="s2">"wet_hours"</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-    <span class="s2">"+5 cm snow in the last 3 days"</span><span class="p">:</span> <span class="p">(</span><span class="s2">"snow_3_days_cm"</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span>
-    <span class="s2">"+10 km/h wind"</span><span class="p">:</span> <span class="p">(</span><span class="s2">"wind_kmh"</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span>
-    <span class="s2">"weekend or holiday"</span><span class="p">:</span> <span class="p">(</span><span class="s2">"weekend_or_holiday"</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-    <span class="s2">"24 Dec to 1 Jan"</span><span class="p">:</span> <span class="p">(</span><span class="s2">"year_end"</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-<span class="p">}</span>
-<span class="n">covariance</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">cov_params</span><span class="p">()</span>
-<span class="n">rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span> <span class="o">|</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
-<span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="p">(</span><span class="n">terms</span><span class="p">,</span> <span class="n">step</span><span class="p">)</span> <span class="ow">in</span> <span class="n">effects</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-    <span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">terms</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">terms</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">terms</span><span class="p">)</span>
-    <span class="n">weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">))</span>
-    <span class="n">estimate</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">params</span><span class="p">[</span><span class="n">names</span><span class="p">]</span> <span class="o">@</span> <span class="n">weights</span><span class="p">)</span>
-    <span class="n">standard_error</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
-        <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">weights</span> <span class="o">@</span> <span class="n">covariance</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">names</span><span class="p">,</span> <span class="n">names</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span> <span class="o">@</span> <span class="n">weights</span><span class="p">)</span>
-    <span class="p">)</span>
-    <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-        <span class="p">{</span>
-            <span class="s2">"factor"</span><span class="p">:</span> <span class="n">label</span><span class="p">,</span>
-            <span class="s2">"effect"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">expm1</span><span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="n">estimate</span><span class="p">)</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
-            <span class="s2">"low"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">expm1</span><span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="p">(</span><span class="n">estimate</span> <span class="o">-</span> <span class="mf">1.96</span> <span class="o">*</span> <span class="n">standard_error</span><span class="p">))</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
-            <span class="s2">"high"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">expm1</span><span class="p">(</span><span class="n">step</span> <span class="o">*</span> <span class="p">(</span><span class="n">estimate</span> <span class="o">+</span> <span class="mf">1.96</span> <span class="o">*</span> <span class="n">standard_error</span><span class="p">))</span> <span class="o">*</span> <span class="mi">100</span><span class="p">,</span>
-        <span class="p">}</span>
-    <span class="p">)</span>
-<span class="n">effect_table</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
-    <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"factor"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Enum</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">effects</span><span class="p">)[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])),</span>
-    <span class="n">direction</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">when</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"effect"</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">then</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"more"</span><span class="p">))</span>
-    <span class="o">.</span><span class="n">otherwise</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">lit</span><span class="p">(</span><span class="s2">"fewer"</span><span class="p">)),</span>
-<span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">effect_table</span><span class="p">)</span>
 
-<span class="n">figure_7</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">ggplot</span><span class="p">(</span><span class="n">effect_table</span><span class="p">,</span> <span class="n">aes</span><span class="p">(</span><span class="s2">"effect"</span><span class="p">,</span> <span class="s2">"factor"</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s2">"direction"</span><span class="p">))</span>
-    <span class="o">+</span> <span class="n">geom_vline</span><span class="p">(</span><span class="n">xintercept</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">CONTEXT</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_errorbarh</span><span class="p">(</span><span class="n">aes</span><span class="p">(</span><span class="n">xmin</span><span class="o">=</span><span class="s2">"low"</span><span class="p">,</span> <span class="n">xmax</span><span class="o">=</span><span class="s2">"high"</span><span class="p">),</span> <span class="n">height</span><span class="o">=</span><span class="mf">0.3</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">geom_point</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">1.8</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">scale_color_manual</span><span class="p">(</span><span class="n">values</span><span class="o">=</span><span class="p">{</span><span class="s2">"more"</span><span class="p">:</span> <span class="n">BLUE</span><span class="p">,</span> <span class="s2">"fewer"</span><span class="p">:</span> <span class="n">LOSING_RED</span><span class="p">},</span> <span class="n">guide</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-    <span class="o">+</span> <span class="n">labs</span><span class="p">(</span>
-        <span class="n">title</span><span class="o">=</span><span class="s2">"What moves a day's riding"</span><span class="p">,</span>
-        <span class="n">x</span><span class="o">=</span><span class="s2">"change in the day's trips, %"</span><span class="p">,</span>
-        <span class="n">y</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="o">+</span> <span class="n">REPORT_THEME</span>
-    <span class="o">+</span> <span class="n">theme</span><span class="p">(</span><span class="n">figure_size</span><span class="o">=</span><span class="p">(</span><span class="mf">3.35</span><span class="p">,</span> <span class="mf">2.6</span><span class="p">),</span> <span class="n">plot_title</span><span class="o">=</span><span class="n">element_text</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mf">8.5</span><span class="p">))</span>
-<span class="p">)</span>
-<span class="n">figure_7</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">FIGURES</span> <span class="o">/</span> <span class="s2">"fig7-demand-effects.png"</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StationHour</span><span class="p">(</span><span class="n">pa</span><span class="o">.</span><span class="n">DataFrameModel</span><span class="p">):</span>
+    <span class="c1"># fmt: off</span>
+    <span class="n">station_id</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Categorical</span>                                      <span class="c1"># station id, the key to Station</span>
+    <span class="n">hour</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Datetime</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">()</span>                                  <span class="c1"># start of the hour, New York local time</span>
+    <span class="n">starts</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Int32</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>                               <span class="c1"># bikes taken out: trips that started here in this hour</span>
+    <span class="n">ends</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Int32</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>                                 <span class="c1"># bikes brought in: trips that ended here in this hour</span>
+    <span class="n">net_flow</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Int32</span>                                              <span class="c1"># ends - starts: bikes the station gained in the hour</span>
+    <span class="n">member_starts</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Int32</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>                        <span class="c1"># starts by annual members, the commuters</span>
+    <span class="n">ebike_starts</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Int32</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>                         <span class="c1"># starts on e-bikes</span>
+    <span class="n">temperature_c</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Float32</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>             <span class="c1"># Central Park air temperature, degrees C</span>
+    <span class="n">precipitation_mm</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">Float32</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>    <span class="c1"># Central Park rain and snow in the hour, mm of water</span>
+    <span class="c1"># fmt: on</span>
+
+    <span class="k">class</span><span class="w"> </span><span class="nc">Config</span><span class="p">(</span><span class="n">BaseConfig</span><span class="p">):</span>  <span class="c1"># ty: ignore[invalid-mutable-override]</span>
+        <span class="n">coerce</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">strict</span> <span class="o">=</span> <span class="s2">"filter"</span>
+        <span class="n">unique</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"station_id"</span><span class="p">,</span> <span class="s2">"hour"</span><span class="p">]</span>  <span class="c1"># noqa: RUF012</span>
+
+    <span class="nd">@pa</span><span class="o">.</span><span class="n">dataframe_check</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">net_flow_is_ends_minus_starts</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">pa</span><span class="o">.</span><span class="n">PolarsData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">LazyFrame</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">data</span><span class="o">.</span><span class="n">lazyframe</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
+            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"net_flow"</span><span class="p">)</span> <span class="o">==</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"ends"</span><span class="p">)</span> <span class="o">-</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="nd">@pa</span><span class="o">.</span><span class="n">dataframe_check</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">subgroups_fit_inside_starts</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">pa</span><span class="o">.</span><span class="n">PolarsData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">LazyFrame</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">data</span><span class="o">.</span><span class="n">lazyframe</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"member_starts"</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">))</span>
+            <span class="o">&amp;</span> <span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"ebike_starts"</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"starts"</span><span class="p">))</span>
+        <span class="p">)</span>
 </pre></div>
 </div>
 </div>

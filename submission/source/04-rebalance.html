@@ -3,7 +3,7 @@
 <html lang="en">
 <head><meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>05-rebalance</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
+<title>04-rebalance</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <style type="text/css">
     pre { line-height: 125%; }
 td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
@@ -7796,7 +7796,7 @@ a.anchor-link {
 <!-- End of mermaid configuration --></head>
 <body class="jp-Notebook" data-jp-theme-light="true" data-jp-theme-name="JupyterLab Light">
 <main>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=15268967">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=dfa4d2ac">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7812,11 +7812,12 @@ September 2025, October being the first history); <code>python rebalance.py test
 schedules once on the test year (October 2025 to September 2026). Each writes
 <code>data/processed/simulation-&lt;year&gt;.npz</code>, about 3 minutes and 1.5 GB. <code>--independent</code> treats every
 station on its own instead, so a turned-away rider still arrives, the simpler model that
-flatters schedules which move few bikes.</p>
+flatters schedules which move few bikes. <code>--rust</code> runs the network replay in the Rust extension
+in <code>rust_sim/</code> and writes <code>simulation-&lt;year&gt;-rust.npz</code>, which should match the Python run.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=150885b6">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=b5f17af3">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7847,6 +7848,7 @@ flatters schedules which move few bikes.</p>
     <span class="n">load_trip_slots</span><span class="p">,</span>
     <span class="n">shortage_table</span><span class="p">,</span>
     <span class="n">simulate_network_slots</span><span class="p">,</span>
+    <span class="n">simulate_network_slots_rust</span><span class="p">,</span>
     <span class="n">simulate_slots</span><span class="p">,</span>
     <span class="n">slot_of_hour</span><span class="p">,</span>
     <span class="n">spend_budget</span><span class="p">,</span>
@@ -7894,6 +7896,8 @@ flatters schedules which move few bikes.</p>
     <span class="p">(</span><span class="n">argument</span> <span class="k">for</span> <span class="n">argument</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">argument</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"--"</span><span class="p">)),</span> <span class="s2">"dev"</span>
 <span class="p">)</span>
 <span class="n">network</span> <span class="o">=</span> <span class="s2">"--independent"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span>
+<span class="n">rust</span> <span class="o">=</span> <span class="s2">"--rust"</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span>
+<span class="n">suffix</span> <span class="o">=</span> <span class="p">(</span><span class="s2">""</span> <span class="k">if</span> <span class="n">network</span> <span class="k">else</span> <span class="s2">"-independent"</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="s2">"-rust"</span> <span class="k">if</span> <span class="n">rust</span> <span class="k">else</span> <span class="s2">""</span><span class="p">)</span>
 <span class="c1"># bikes loaded or unloaded per night for the budget rule, and stations visited at midday</span>
 <span class="n">BUDGETS</span> <span class="o">=</span> <span class="p">(</span><span class="mi">250</span><span class="p">,</span> <span class="mi">500</span><span class="p">,</span> <span class="mi">1000</span><span class="p">,</span> <span class="mi">2000</span><span class="p">,</span> <span class="mi">3000</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="mi">6000</span><span class="p">,</span> <span class="mi">9000</span><span class="p">)</span>
 <span class="n">MIDDAY_STATIONS</span> <span class="o">=</span> <span class="p">(</span><span class="mi">25</span><span class="p">,</span> <span class="mi">50</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="mi">200</span><span class="p">,</span> <span class="mi">400</span><span class="p">)</span>
@@ -7971,7 +7975,7 @@ flatters schedules which move few bikes.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=d76b9738">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=beecc4e0">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7983,7 +7987,7 @@ could hold at 04:00 never to fill up.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=32db20f7">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=161a7e7b">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8073,7 +8077,7 @@ could hold at 04:00 never to fill up.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0787fba2">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=0d7056e8">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8083,7 +8087,7 @@ could hold at 04:00 never to fill up.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=cc52ea7b">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=09cb2381">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8217,7 +8221,8 @@ could hold at 04:00 never to fill up.</p>
                     <span class="n">bikes_out_by_station</span><span class="p">[</span><span class="n">p</span><span class="p">,</span> <span class="n">chosen</span><span class="p">]</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="o">-</span><span class="n">midday_move</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
                     <span class="n">stock</span><span class="p">[</span><span class="n">p</span><span class="p">,</span> <span class="n">chosen</span><span class="p">]</span> <span class="o">=</span> <span class="n">target</span><span class="p">[</span><span class="n">chosen</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">trip_slots</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">stock</span><span class="p">,</span> <span class="n">empty</span><span class="p">,</span> <span class="n">full</span> <span class="o">=</span> <span class="n">simulate_network_slots</span><span class="p">(</span>
+                <span class="n">simulate</span> <span class="o">=</span> <span class="n">simulate_network_slots_rust</span> <span class="k">if</span> <span class="n">rust</span> <span class="k">else</span> <span class="n">simulate_network_slots</span>
+                <span class="n">stock</span><span class="p">,</span> <span class="n">empty</span><span class="p">,</span> <span class="n">full</span> <span class="o">=</span> <span class="n">simulate</span><span class="p">(</span>
                     <span class="n">stock</span><span class="p">,</span>
                     <span class="n">capacity</span><span class="p">,</span>
                     <span class="n">starts</span><span class="p">[:,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">segment_start</span><span class="p">:</span><span class="n">segment_end</span><span class="p">],</span>
@@ -8247,7 +8252,7 @@ could hold at 04:00 never to fill up.</p>
 </div>
 </div>
 </div>
-<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=b5ff7b58">
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=2ef01270">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8257,7 +8262,7 @@ could hold at 04:00 never to fill up.</p>
 </div>
 </div>
 </div>
-</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=62326ad0">
+</div><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=3363da67">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -8289,7 +8294,7 @@ could hold at 04:00 never to fill up.</p>
     <span class="nb">print</span><span class="p">(</span><span class="n">summary</span><span class="p">)</span>
 
 <span class="n">np</span><span class="o">.</span><span class="n">savez_compressed</span><span class="p">(</span>
-    <span class="n">PROCESSED</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"simulation-</span><span class="si">{</span><span class="n">year</span><span class="si">}{</span><span class="s1">''</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">network</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'-independent'</span><span class="si">}</span><span class="s2">.npz"</span><span class="p">,</span>
+    <span class="n">PROCESSED</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"simulation-</span><span class="si">{</span><span class="n">year</span><span class="si">}{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">.npz"</span><span class="p">,</span>
     <span class="n">policy</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">policy</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">policy</span> <span class="ow">in</span> <span class="n">policies</span><span class="p">]),</span>
     <span class="n">family</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">policy</span><span class="o">.</span><span class="n">family</span> <span class="k">for</span> <span class="n">policy</span> <span class="ow">in</span> <span class="n">policies</span><span class="p">]),</span>
     <span class="n">station_id</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">station_ids</span><span class="p">),</span>
@@ -8311,7 +8316,7 @@ could hold at 04:00 never to fill up.</p>
     <span class="n">capacity</span><span class="o">=</span><span class="n">capacity</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">summary</span><span class="o">.</span><span class="n">write_parquet</span><span class="p">(</span>
-    <span class="n">PROCESSED</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"simulation-</span><span class="si">{</span><span class="n">year</span><span class="si">}{</span><span class="s1">''</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">network</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'-independent'</span><span class="si">}</span><span class="s2">-summary.parquet"</span>
+    <span class="n">PROCESSED</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"simulation-</span><span class="si">{</span><span class="n">year</span><span class="si">}{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">-summary.parquet"</span>
 <span class="p">)</span>
 </pre></div>
 </div>

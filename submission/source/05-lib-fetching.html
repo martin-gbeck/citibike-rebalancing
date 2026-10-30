@@ -3,7 +3,7 @@
 <html lang="en">
 <head><meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>09-lib-rebalancing</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
+<title>05-lib-fetching</title><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.10/require.min.js"></script>
 <style type="text/css">
     pre { line-height: 125%; }
 td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
@@ -7795,7 +7795,7 @@ a.anchor-link {
 </style>
 <!-- End of mermaid configuration --></head>
 <body class="jp-Notebook" data-jp-theme-light="true" data-jp-theme-name="JupyterLab Light">
-<main><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=ae0b6a54">
+<main><div class="jp-Cell jp-CodeCell jp-Notebook-cell jp-mod-noOutputs" id="cell-id=5c7f3988">
 <div class="jp-Cell-inputWrapper" tabindex="0">
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
@@ -7803,303 +7803,225 @@ a.anchor-link {
 <div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
-<div class="highlight hl-ipython3"><pre><span></span><span class="sd">"""Station stock rebuilt from 5-minute trip counts, and the rules that decide how many bikes to move.</span>
+<div class="highlight hl-ipython3"><pre><span></span><span class="sd">"""Pulling Citi Bike trips, station capacities and New York weather, each cached under data/raw/."""</span>
 
-<span class="sd">A service day runs from 04:00, the quietest hour, to 04:00 the next morning, in 288 slots of five</span>
-<span class="sd">minutes. Arrays are indexed [station, day, slot], or [policy, station] for the stock under several</span>
-<span class="sd">rebalancing policies simulated side by side.</span>
-<span class="sd">"""</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span><span class="p">,</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">time</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">zipfile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">polars</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pl</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
 
-<span class="n">SLOTS_PER_DAY</span> <span class="o">=</span> <span class="mi">288</span>
-<span class="n">DAY_START_HOUR</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">TRIPDATA</span> <span class="o">=</span> <span class="s2">"https://s3.amazonaws.com/tripdata"</span>
+<span class="n">STATION_INFORMATION</span> <span class="o">=</span> <span class="s2">"https://gbfs.citibikenyc.com/gbfs/en/station_information.json"</span>
+<span class="n">OPEN_METEO_ARCHIVE</span> <span class="o">=</span> <span class="s2">"https://archive-api.open-meteo.com/v1/archive"</span>
+<span class="c1"># Central Park, the weather station New York's forecasts are quoted for</span>
+<span class="n">CENTRAL_PARK</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"latitude"</span><span class="p">:</span> <span class="mf">40.7812</span><span class="p">,</span> <span class="s2">"longitude"</span><span class="p">:</span> <span class="o">-</span><span class="mf">73.9665</span><span class="p">}</span>
+<span class="c1"># zstd level 9 shrinks a month of CSV to about a sixth (754 MB to 114 MB for April 2026) in under a second;</span>
+<span class="c1"># level 3 gives 118 MB, level 15 gives 111 MB at four times the time</span>
+<span class="n">PARQUET_COMPRESSION_LEVEL</span> <span class="o">=</span> <span class="mi">9</span>
 
-<span class="c1"># US federal holidays in the two years, plus the Friday after Thanksgiving; offices close, so these</span>
-<span class="c1"># days ride like weekends</span>
-<span class="n">HOLIDAYS</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">14</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">11</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">28</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">29</span><span class="p">),</span>
-    <span class="n">date</span><span class="p">(</span><span class="mi">2024</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">25</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">20</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">17</span><span class="p">),</span>
-    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">26</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">19</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
-    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">13</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">11</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">27</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">28</span><span class="p">),</span>
-    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">25</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">19</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">16</span><span class="p">),</span>
-    <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">25</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">19</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">7</span><span class="p">),</span>
-<span class="p">]</span>  <span class="c1"># fmt: skip</span>
+<span class="c1"># station ids such as 7293.10 are text: read as numbers they would lose the trailing zero</span>
+<span class="n">TRIP_CSV_SCHEMA</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"ride_id"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"rideable_type"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"started_at"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"ended_at"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"start_station_name"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"start_station_id"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"end_station_name"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"end_station_id"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"start_lat"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"start_lng"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"end_lat"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"end_lng"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+    <span class="s2">"member_casual"</span><span class="p">:</span> <span class="n">pl</span><span class="o">.</span><span class="n">String</span><span class="p">,</span>
+<span class="p">}</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">slot_of_hour</span><span class="p">(</span><span class="n">hour</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""The slot of the service day that starts at `hour` o'clock (4 is slot 0, 3 the next night is 276)."""</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">hour</span> <span class="o">-</span> <span class="n">DAY_START_HOUR</span><span class="p">)</span> <span class="o">%</span> <span class="mi">24</span> <span class="o">*</span> <span class="mi">12</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_timestamp</span><span class="p">(</span><span class="n">column</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">Expr</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A trip timestamp as a datetime in New York local time, the clock the files are written in.</span>
 
-
-<span class="k">def</span><span class="w"> </span><span class="nf">load_day_slots</span><span class="p">(</span>
-    <span class="n">bins_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">station_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">first_day</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span> <span class="n">days</span><span class="p">:</span> <span class="nb">int</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Starts and ends as int16 arrays [station, day, slot] for `days` service days from `first_day`.</span>
-
-<span class="sd">    Stations follow the order of `station_ids`; trips at stations not in the list are left out.</span>
+<span class="sd">    Some months carry milliseconds and some do not, so only the first 19 characters are read.</span>
 <span class="sd">    """</span>
-    <span class="n">window_start</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">first_day</span><span class="p">,</span> <span class="n">time</span><span class="p">(</span><span class="n">DAY_START_HOUR</span><span class="p">))</span>
-    <span class="n">window_end</span> <span class="o">=</span> <span class="n">window_start</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">days</span><span class="p">)</span>
-    <span class="n">rows</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
-        <span class="p">{</span><span class="s2">"station_id"</span><span class="p">:</span> <span class="n">station_ids</span><span class="p">,</span> <span class="s2">"row"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">station_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)}</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="n">column</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">19</span><span class="p">)</span>
+        <span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="s2">"%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S"</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
     <span class="p">)</span>
-    <span class="n">counts</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">scan_parquet</span><span class="p">(</span><span class="n">bins_dir</span> <span class="o">/</span> <span class="s2">"*.parquet"</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"slot"</span><span class="p">)</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span><span class="n">window_start</span><span class="p">,</span> <span class="n">window_end</span><span class="p">,</span> <span class="n">closed</span><span class="o">=</span><span class="s2">"left"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">lazy</span><span class="p">(),</span> <span class="n">on</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">select</span><span class="p">(</span>
-            <span class="s2">"row"</span><span class="p">,</span>
-            <span class="s2">"starts"</span><span class="p">,</span>
-            <span class="s2">"ends"</span><span class="p">,</span>
-            <span class="n">offset</span><span class="o">=</span><span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"slot"</span><span class="p">)</span> <span class="o">-</span> <span class="n">window_start</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_minutes</span><span class="p">()</span> <span class="o">//</span> <span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span>
-                <span class="n">pl</span><span class="o">.</span><span class="n">Int32</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_trip_month</span><span class="p">(</span><span class="n">month</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span> <span class="n">trip_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One month of trips as `&lt;S3 zip name&gt;.parquet` in `trip_dir`, downloaded and converted if missing.</span>
+
+<span class="sd">    `202604-citibike-tripdata.zip` on S3 becomes `202604-citibike-tripdata.parquet`, holding every</span>
+<span class="sd">    trip of its CSV parts, with timestamps parsed and coordinates as numbers. Each CSV part is read</span>
+<span class="sd">    straight out of the zip in memory, so the only thing on disk besides the result is the zip itself,</span>
+<span class="sd">    and only while the month is converted.</span>
+<span class="sd">    """</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">month</span><span class="si">:</span><span class="s2">%Y%m</span><span class="si">}</span><span class="s2">-citibike-tripdata"</span>
+    <span class="n">target</span> <span class="o">=</span> <span class="n">trip_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.parquet"</span>
+    <span class="k">if</span> <span class="n">target</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">target</span>
+    <span class="n">trip_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">work_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">-"</span><span class="p">))</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">archive</span> <span class="o">=</span> <span class="n">work_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">.zip"</span>
+        <span class="k">with</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">TRIPDATA</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">archive</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span>
+        <span class="p">)</span> <span class="k">as</span> <span class="n">response</span><span class="p">:</span>
+            <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+            <span class="k">with</span> <span class="n">archive</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+                <span class="n">shutil</span><span class="o">.</span><span class="n">copyfileobj</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="n">file</span><span class="p">,</span> <span class="n">length</span><span class="o">=</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="mi">22</span><span class="p">)</span>
+        <span class="k">with</span> <span class="n">zipfile</span><span class="o">.</span><span class="n">ZipFile</span><span class="p">(</span><span class="n">archive</span><span class="p">)</span> <span class="k">as</span> <span class="n">zipped</span><span class="p">:</span>
+            <span class="c1"># skip the __MACOSX copies some archives carry</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+                <span class="n">part</span>
+                <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">zipped</span><span class="o">.</span><span class="n">namelist</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">part</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">".csv"</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">part</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"__MACOSX"</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">trips</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span>
+                <span class="n">pl</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span>
+                    <span class="n">zipped</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">part</span><span class="p">),</span>
+                    <span class="n">schema_overrides</span><span class="o">=</span><span class="n">TRIP_CSV_SCHEMA</span><span class="p">,</span>
+                    <span class="n">infer_schema</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="p">)</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">TRIP_CSV_SCHEMA</span><span class="p">))</span>
+                <span class="k">for</span> <span class="n">part</span> <span class="ow">in</span> <span class="n">parts</span>
+            <span class="p">)</span>
+        <span class="n">trips</span> <span class="o">=</span> <span class="n">trips</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
+            <span class="n">parse_timestamp</span><span class="p">(</span><span class="s2">"started_at"</span><span class="p">),</span>
+            <span class="n">parse_timestamp</span><span class="p">(</span><span class="s2">"ended_at"</span><span class="p">),</span>
+            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"start_lat"</span><span class="p">,</span> <span class="s2">"start_lng"</span><span class="p">,</span> <span class="s2">"end_lat"</span><span class="p">,</span> <span class="s2">"end_lng"</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span>
+                <span class="n">pl</span><span class="o">.</span><span class="n">Float64</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span>
             <span class="p">),</span>
         <span class="p">)</span>
-        <span class="o">.</span><span class="n">collect</span><span class="p">()</span>
-    <span class="p">)</span>
-    <span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">station_ids</span><span class="p">),</span> <span class="n">days</span><span class="p">,</span> <span class="n">SLOTS_PER_DAY</span><span class="p">)</span>
-    <span class="n">starts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span>
-    <span class="n">ends</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span>
-    <span class="n">row</span> <span class="o">=</span> <span class="n">counts</span><span class="p">[</span><span class="s2">"row"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="n">offset</span> <span class="o">=</span> <span class="n">counts</span><span class="p">[</span><span class="s2">"offset"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="n">day</span><span class="p">,</span> <span class="n">slot</span> <span class="o">=</span> <span class="n">offset</span> <span class="o">//</span> <span class="n">SLOTS_PER_DAY</span><span class="p">,</span> <span class="n">offset</span> <span class="o">%</span> <span class="n">SLOTS_PER_DAY</span>
-    <span class="n">starts</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">day</span><span class="p">,</span> <span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="n">counts</span><span class="p">[</span><span class="s2">"starts"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="n">ends</span><span class="p">[</span><span class="n">row</span><span class="p">,</span> <span class="n">day</span><span class="p">,</span> <span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="n">counts</span><span class="p">[</span><span class="s2">"ends"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">starts</span><span class="p">,</span> <span class="n">ends</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">simulate_slots</span><span class="p">(</span>
-    <span class="n">stock</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">capacity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">starts</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">ends</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""Replay trips through stations slot by slot, from `stock` [policy, station].</span>
-
-<span class="sd">    `starts` and `ends` are [station, slot]. In each slot the station gains its ends and loses its</span>
-<span class="sd">    starts; a rider who would take it below 0 finds it empty and a rider who would take it above</span>
-<span class="sd">    `capacity` finds it full, and both are counted as shortages and dropped. Returns the stock</span>
-<span class="sd">    after the last slot, and the empty and full shortages as [policy, station, slot].</span>
-<span class="sd">    """</span>
-    <span class="n">stock</span> <span class="o">=</span> <span class="n">stock</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-    <span class="n">net</span> <span class="o">=</span> <span class="p">(</span><span class="n">ends</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="o">-</span> <span class="n">starts</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
-    <span class="n">empty</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="o">*</span><span class="n">stock</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">net</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span>
-    <span class="n">full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">empty</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">slot</span><span class="p">,</span> <span class="n">slot_net</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">net</span><span class="p">):</span>
-        <span class="n">stock</span> <span class="o">=</span> <span class="n">stock</span> <span class="o">+</span> <span class="n">slot_net</span>
-        <span class="n">empty</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="o">-</span><span class="n">stock</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="n">full</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">slot</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">stock</span> <span class="o">-</span> <span class="n">capacity</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="n">stock</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">stock</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">capacity</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">stock</span><span class="p">,</span> <span class="n">empty</span><span class="p">,</span> <span class="n">full</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">target_band</span><span class="p">(</span><span class="n">need</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">room</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""The range of starting stock that would have left the fewest shortages over past days.</span>
-
-<span class="sd">    `need` [station, day] is the bikes a station needed at the start of each past day never to run</span>
-<span class="sd">    empty, `room` the most it could hold never to fill; nan where the station has no history that</span>
-<span class="sd">    day. On a past day, starting at x leaves max(0, need - x) + max(0, x - room) shortages, so the</span>
-<span class="sd">    total over n days is lowest between the n-th and (n+1)-th smallest of the 2n values. Returns</span>
-<span class="sd">    that range, rounded inward to whole bikes and nan where a station has no history.</span>
-<span class="sd">    """</span>
-    <span class="n">values</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([</span><span class="n">need</span><span class="p">,</span> <span class="n">room</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># nan sorts last</span>
-    <span class="n">days_seen</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="o">~</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">need</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">middle</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">days_seen</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span>
-    <span class="n">low</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">take_along_axis</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">middle</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
-    <span class="n">high</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">take_along_axis</span><span class="p">(</span><span class="n">values</span><span class="p">,</span> <span class="n">middle</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)[:,</span> <span class="mi">0</span><span class="p">]</span>
-    <span class="n">low</span><span class="p">,</span> <span class="n">high</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">low</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">high</span><span class="p">)</span>
-    <span class="c1"># with fractional values the two can cross; the minimum then sits at one whole bike</span>
-    <span class="n">high</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">high</span><span class="p">,</span> <span class="n">low</span><span class="p">)</span>
-    <span class="n">no_history</span> <span class="o">=</span> <span class="n">days_seen</span> <span class="o">==</span> <span class="mi">0</span>
-    <span class="n">low</span><span class="p">[</span><span class="n">no_history</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-    <span class="n">high</span><span class="p">[</span><span class="n">no_history</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span>
-    <span class="k">return</span> <span class="n">low</span><span class="p">,</span> <span class="n">high</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">expected_shortages</span><span class="p">(</span>
-    <span class="n">need</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">room</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">levels</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Average shortages over the past days if each station started at each of `levels`.</span>
-
-<span class="sd">    `need` and `room` are [station, day] as in `target_band`; `levels` is [station, level] or</span>
-<span class="sd">    [station]. Returns one value per entry of `levels`.</span>
-<span class="sd">    """</span>
-    <span class="n">levels_3d</span> <span class="o">=</span> <span class="n">levels</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="k">if</span> <span class="n">levels</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">levels</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
-    <span class="n">shortfall</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">need</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">levels_3d</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span>
-        <span class="n">levels_3d</span> <span class="o">-</span> <span class="n">room</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:],</span> <span class="mi">0</span>
-    <span class="p">)</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmean</span><span class="p">(</span><span class="n">shortfall</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">result</span> <span class="k">if</span> <span class="n">levels</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">result</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">shortage_table</span><span class="p">(</span><span class="n">need</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">room</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">max_level</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""`expected_shortages` for every whole stock level from 0 to `max_level`, as [station, level]."""</span>
-    <span class="n">levels</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">max_level</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span><span class="o">.</span><span class="n">repeat</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">need</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">expected_shortages</span><span class="p">(</span><span class="n">need</span><span class="p">,</span> <span class="n">room</span><span class="p">,</span> <span class="n">levels</span><span class="p">)</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">spend_budget</span><span class="p">(</span>
-    <span class="n">stock</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">low</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">high</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">table</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">budget</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""New stock per station after moving at most `budget` bikes where each prevents the most.</span>
-
-<span class="sd">    `table` is `shortage_table` for these stations. Each bike moved one step toward a station's</span>
-<span class="sd">    band prevents some expected shortages, and the saving shrinks as the station nears its band,</span>
-<span class="sd">    so taking the `budget` largest single-bike savings across all stations is the best use of</span>
-<span class="sd">    the budget. Stations without history (nan band) stay put.</span>
-<span class="sd">    """</span>
-    <span class="n">up_saving</span> <span class="o">=</span> <span class="n">table</span><span class="p">[:,</span> <span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">table</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:]</span>  <span class="c1"># from level x to x + 1</span>
-    <span class="n">down_saving</span> <span class="o">=</span> <span class="n">up_saving</span>  <span class="c1"># the same pair of levels, walked from x + 1 down to x</span>
-    <span class="n">position</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">table</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)[</span><span class="kc">None</span><span class="p">,</span> <span class="p">:]</span>
-    <span class="n">up_step</span> <span class="o">=</span> <span class="p">(</span><span class="n">position</span> <span class="o">&gt;=</span> <span class="n">stock</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">position</span> <span class="o">&lt;</span> <span class="n">low</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">])</span>
-    <span class="n">down_step</span> <span class="o">=</span> <span class="p">(</span><span class="n">position</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="n">stock</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">position</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&gt;</span> <span class="n">high</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">])</span>
-    <span class="n">savings</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">(</span>
-        <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">up_step</span><span class="p">,</span> <span class="n">up_saving</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">down_step</span><span class="p">,</span> <span class="o">-</span><span class="n">down_saving</span><span class="p">,</span> <span class="mi">0</span><span class="p">)],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
-    <span class="p">)</span>
-    <span class="n">flat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nan_to_num</span><span class="p">(</span><span class="n">savings</span><span class="p">)</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span>
-    <span class="n">chosen</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">budget</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">flat</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)))</span>
-    <span class="k">if</span> <span class="n">chosen</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">stock</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
-    <span class="n">picks</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argpartition</span><span class="p">(</span><span class="o">-</span><span class="n">flat</span><span class="p">,</span> <span class="n">chosen</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)[:</span><span class="n">chosen</span><span class="p">]</span>
-    <span class="n">station</span><span class="p">,</span> <span class="n">column</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">divmod</span><span class="p">(</span><span class="n">picks</span><span class="p">,</span> <span class="n">savings</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-    <span class="n">is_up</span> <span class="o">=</span> <span class="n">column</span> <span class="o">&lt;</span> <span class="n">position</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-    <span class="n">ups</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">station</span><span class="p">[</span><span class="n">is_up</span><span class="p">],</span> <span class="n">minlength</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">stock</span><span class="p">))</span>
-    <span class="n">downs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">station</span><span class="p">[</span><span class="o">~</span><span class="n">is_up</span><span class="p">],</span> <span class="n">minlength</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">stock</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">stock</span> <span class="o">+</span> <span class="n">ups</span> <span class="o">-</span> <span class="n">downs</span>
-
-
-<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">TripSlots</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""The trips of one block of days, sorted by start slot, for `simulate_network_slots`.</span>
-
-<span class="sd">    Slots are counted from 04:00 on the first day simulated, so a trip that ends in the next block</span>
-<span class="sd">    keeps a slot number that block understands. `rank` is a trip's place among the trips leaving</span>
-<span class="sd">    the same station in the same slot; `arrives` is false for trips that end outside the simulated</span>
-<span class="sd">    stations or run longer than a day. `bounds[k]` is the first trip starting in the block's</span>
-<span class="sd">    k-th slot.</span>
-<span class="sd">    """</span>
-
-    <span class="n">origin</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-    <span class="n">destination</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-    <span class="n">end_slot</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-    <span class="n">rank</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-    <span class="n">arrives</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-    <span class="n">bounds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span>
-    <span class="n">first_slot</span><span class="p">:</span> <span class="nb">int</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">load_trip_slots</span><span class="p">(</span>
-    <span class="n">trips_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span>
-    <span class="n">station_ids</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-    <span class="n">first_day</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span>
-    <span class="n">days</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="n">simulation_start</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">TripSlots</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""The trips starting in `days` service days from `first_day`, from the test-year trip table."""</span>
-    <span class="n">window_start</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">first_day</span><span class="p">,</span> <span class="n">time</span><span class="p">(</span><span class="n">DAY_START_HOUR</span><span class="p">))</span>
-    <span class="n">origin_time</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">combine</span><span class="p">(</span><span class="n">simulation_start</span><span class="p">,</span> <span class="n">time</span><span class="p">(</span><span class="n">DAY_START_HOUR</span><span class="p">))</span>
-    <span class="n">rows</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
-        <span class="p">{</span><span class="s2">"station_id"</span><span class="p">:</span> <span class="n">station_ids</span><span class="p">,</span> <span class="s2">"row"</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">station_ids</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)}</span>
-    <span class="p">)</span>
-    <span class="n">trips</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">pl</span><span class="o">.</span><span class="n">scan_parquet</span><span class="p">(</span><span class="n">trips_dir</span> <span class="o">/</span> <span class="s2">"*.parquet"</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">filter</span><span class="p">(</span>
-            <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"start_slot"</span><span class="p">)</span><span class="o">.</span><span class="n">is_between</span><span class="p">(</span>
-                <span class="n">window_start</span><span class="p">,</span> <span class="n">window_start</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">days</span><span class="p">),</span> <span class="n">closed</span><span class="o">=</span><span class="s2">"left"</span>
-            <span class="p">)</span>
+        <span class="c1"># write under a temporary name, so an interrupted run never leaves a half file that looks done</span>
+        <span class="n">trips</span><span class="o">.</span><span class="n">write_parquet</span><span class="p">(</span>
+            <span class="n">work_dir</span> <span class="o">/</span> <span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">compression</span><span class="o">=</span><span class="s2">"zstd"</span><span class="p">,</span>
+            <span class="n">compression_level</span><span class="o">=</span><span class="n">PARQUET_COMPRESSION_LEVEL</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rows</span><span class="o">.</span><span class="n">lazy</span><span class="p">(),</span> <span class="n">left_on</span><span class="o">=</span><span class="s2">"start_station_id"</span><span class="p">,</span> <span class="n">right_on</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">join</span><span class="p">(</span>
-            <span class="n">rows</span><span class="o">.</span><span class="n">lazy</span><span class="p">()</span><span class="o">.</span><span class="n">rename</span><span class="p">({</span><span class="s2">"row"</span><span class="p">:</span> <span class="s2">"destination"</span><span class="p">}),</span>
-            <span class="n">left_on</span><span class="o">=</span><span class="s2">"end_station_id"</span><span class="p">,</span>
-            <span class="n">right_on</span><span class="o">=</span><span class="s2">"station_id"</span><span class="p">,</span>
-            <span class="n">how</span><span class="o">=</span><span class="s2">"left"</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="o">.</span><span class="n">select</span><span class="p">(</span>
-            <span class="n">origin</span><span class="o">=</span><span class="s2">"row"</span><span class="p">,</span>
-            <span class="n">destination</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"destination"</span><span class="p">)</span><span class="o">.</span><span class="n">fill_null</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">),</span>
-            <span class="c1"># slots counted from 04:00 on the first simulated day</span>
-            <span class="n">start</span><span class="o">=</span><span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"start_slot"</span><span class="p">)</span> <span class="o">-</span> <span class="n">origin_time</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_minutes</span><span class="p">()</span> <span class="o">//</span> <span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span>
-                <span class="n">pl</span><span class="o">.</span><span class="n">Int64</span>
-            <span class="p">),</span>
-            <span class="n">end</span><span class="o">=</span><span class="p">((</span><span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"end_slot"</span><span class="p">)</span> <span class="o">-</span> <span class="n">origin_time</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">total_minutes</span><span class="p">()</span> <span class="o">//</span> <span class="mi">5</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span>
-                <span class="n">pl</span><span class="o">.</span><span class="n">Int64</span>
-            <span class="p">),</span>
-        <span class="p">)</span>
-        <span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="s2">"start"</span><span class="p">,</span> <span class="s2">"origin"</span><span class="p">)</span>
-        <span class="o">.</span><span class="n">with_columns</span><span class="p">(</span><span class="n">rank</span><span class="o">=</span><span class="n">pl</span><span class="o">.</span><span class="n">int_range</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">len</span><span class="p">())</span><span class="o">.</span><span class="n">over</span><span class="p">(</span><span class="s2">"start"</span><span class="p">,</span> <span class="s2">"origin"</span><span class="p">))</span>
-        <span class="o">.</span><span class="n">collect</span><span class="p">()</span>
-    <span class="p">)</span>
-    <span class="n">start</span> <span class="o">=</span> <span class="n">trips</span><span class="p">[</span><span class="s2">"start"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="n">end</span> <span class="o">=</span> <span class="n">trips</span><span class="p">[</span><span class="s2">"end"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="n">destination</span> <span class="o">=</span> <span class="n">trips</span><span class="p">[</span><span class="s2">"destination"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span>
-    <span class="n">first_slot</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">window_start</span> <span class="o">-</span> <span class="n">origin_time</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">//</span> <span class="mi">300</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">TripSlots</span><span class="p">(</span>
-        <span class="n">origin</span><span class="o">=</span><span class="n">trips</span><span class="p">[</span><span class="s2">"origin"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
-        <span class="n">destination</span><span class="o">=</span><span class="n">destination</span><span class="p">,</span>
-        <span class="n">end_slot</span><span class="o">=</span><span class="n">end</span><span class="p">,</span>
-        <span class="n">rank</span><span class="o">=</span><span class="n">trips</span><span class="p">[</span><span class="s2">"rank"</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span>
-        <span class="n">arrives</span><span class="o">=</span><span class="p">(</span><span class="n">destination</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">end</span> <span class="o">&gt;=</span> <span class="n">start</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">end</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="n">SLOTS_PER_DAY</span><span class="p">),</span>
-        <span class="n">bounds</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">searchsorted</span><span class="p">(</span>
-            <span class="n">start</span><span class="p">,</span> <span class="n">first_slot</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">days</span> <span class="o">*</span> <span class="n">SLOTS_PER_DAY</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span> <span class="n">side</span><span class="o">=</span><span class="s2">"left"</span>
-        <span class="p">),</span>
-        <span class="n">first_slot</span><span class="o">=</span><span class="n">first_slot</span><span class="p">,</span>
-    <span class="p">)</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="n">work_dir</span> <span class="o">/</span> <span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">work_dir</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">target</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">simulate_network_slots</span><span class="p">(</span>
-    <span class="n">stock</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">capacity</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">starts</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">ends</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">trips</span><span class="p">:</span> <span class="n">TripSlots</span><span class="p">,</span>
-    <span class="n">cancelled_arrivals</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-    <span class="n">first_slot</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">"""`simulate_slots`, except that a rider who finds the start station empty never arrives.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_station_capacity</span><span class="p">(</span><span class="n">raw_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Each station's dock count from Citi Bike's live feed, saved on first call and read back after.</span>
 
-<span class="sd">    In each slot, riders leave first; those the station cannot serve are turned away, and the</span>
-<span class="sd">    trips they would have made are struck from their destinations' arrivals. `cancelled_arrivals`</span>
-<span class="sd">    [policy, station, slot of the day] holds the struck arrivals still to come, carries over from</span>
-<span class="sd">    one call to the next, and is updated in place. `first_slot` numbers the first slot the same</span>
-<span class="sd">    way as `trips`.</span>
+<span class="sd">    The feed only describes the network on the day it is pulled, so stations that closed earlier are</span>
+<span class="sd">    missing and capacities that changed show their current value. `station_id` is the feed's</span>
+<span class="sd">    `short_name`, the id the trip files use.</span>
 <span class="sd">    """</span>
-    <span class="n">stock</span> <span class="o">=</span> <span class="n">stock</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-    <span class="n">slots</span> <span class="o">=</span> <span class="n">starts</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-    <span class="n">empty</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="o">*</span><span class="n">stock</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">slots</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">int16</span><span class="p">)</span>
-    <span class="n">full</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">empty</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">slots</span><span class="p">):</span>
-        <span class="n">slot</span> <span class="o">=</span> <span class="n">first_slot</span> <span class="o">+</span> <span class="n">k</span>
-        <span class="n">leaving</span> <span class="o">=</span> <span class="n">starts</span><span class="p">[:,</span> <span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
-        <span class="n">lost</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">leaving</span> <span class="o">-</span> <span class="n">stock</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="n">stock</span> <span class="o">=</span> <span class="n">stock</span> <span class="o">-</span> <span class="n">leaving</span> <span class="o">+</span> <span class="n">lost</span>
-        <span class="n">empty</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">lost</span>
-        <span class="n">low</span> <span class="o">=</span> <span class="n">trips</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="n">slot</span> <span class="o">-</span> <span class="n">trips</span><span class="o">.</span><span class="n">first_slot</span><span class="p">]</span>
-        <span class="n">high</span> <span class="o">=</span> <span class="n">trips</span><span class="o">.</span><span class="n">bounds</span><span class="p">[</span><span class="n">slot</span> <span class="o">-</span> <span class="n">trips</span><span class="o">.</span><span class="n">first_slot</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">high</span> <span class="o">&gt;</span> <span class="n">low</span> <span class="ow">and</span> <span class="n">lost</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
-            <span class="n">struck</span> <span class="o">=</span> <span class="p">(</span><span class="n">trips</span><span class="o">.</span><span class="n">rank</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">low</span><span class="p">:</span><span class="n">high</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">lost</span><span class="p">[:,</span> <span class="n">trips</span><span class="o">.</span><span class="n">origin</span><span class="p">[</span><span class="n">low</span><span class="p">:</span><span class="n">high</span><span class="p">]])</span> <span class="o">&amp;</span> <span class="p">(</span>
-                <span class="n">trips</span><span class="o">.</span><span class="n">arrives</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="n">low</span><span class="p">:</span><span class="n">high</span><span class="p">]</span>
+    <span class="n">saved</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">raw_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"station_information-*.json"</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">saved</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">saved</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">raw_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">raw_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"station_information-</span><span class="si">{</span><span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span><span class="si">:</span><span class="s2">%Y-%m-%d</span><span class="si">}</span><span class="s2">.json"</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">STATION_INFORMATION</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">stations</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())[</span><span class="s2">"data"</span><span class="p">][</span><span class="s2">"stations"</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">"station_id"</span><span class="p">:</span> <span class="n">station</span><span class="p">[</span><span class="s2">"short_name"</span><span class="p">],</span>
+                <span class="s2">"capacity"</span><span class="p">:</span> <span class="n">station</span><span class="p">[</span><span class="s2">"capacity"</span><span class="p">],</span>
+                <span class="s2">"feed_name"</span><span class="p">:</span> <span class="n">station</span><span class="p">[</span><span class="s2">"name"</span><span class="p">],</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">station</span> <span class="ow">in</span> <span class="n">stations</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_weather</span><span class="p">(</span><span class="n">start</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span> <span class="n">raw_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Hourly Central Park weather in New York local time from the Open-Meteo archive, cached as CSV.</span>
+
+<span class="sd">    Columns: hour, temperature_c, precipitation_mm, snowfall_cm, wind_kmh.</span>
+<span class="sd">    """</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">raw_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"weather-central-park-</span><span class="si">{</span><span class="n">start</span><span class="si">:</span><span class="s2">%Y%m%d</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">end</span><span class="si">:</span><span class="s2">%Y%m%d</span><span class="si">}</span><span class="s2">.csv"</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">raw_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">OPEN_METEO_ARCHIVE</span><span class="p">,</span>
+            <span class="n">params</span><span class="o">=</span><span class="p">{</span>
+                <span class="o">**</span><span class="n">CENTRAL_PARK</span><span class="p">,</span>
+                <span class="s2">"start_date"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">start</span><span class="si">:</span><span class="s2">%Y-%m-%d</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"end_date"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">end</span><span class="si">:</span><span class="s2">%Y-%m-%d</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"hourly"</span><span class="p">:</span> <span class="s2">"temperature_2m,precipitation,snowfall,wind_speed_10m"</span><span class="p">,</span>
+                <span class="s2">"timezone"</span><span class="p">:</span> <span class="s2">"America/New_York"</span><span class="p">,</span>
+                <span class="s2">"format"</span><span class="p">:</span> <span class="s2">"csv"</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="mi">120</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+        <span class="c1"># the CSV opens with three lines of location metadata and a blank line before the header</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">pl</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">select</span><span class="p">(</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"time"</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="s2">"%Y-%m-</span><span class="si">%d</span><span class="s2">T%H:%M"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"hour"</span><span class="p">),</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"temperature_2m (°C)"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"temperature_c"</span><span class="p">),</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"precipitation (mm)"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"precipitation_mm"</span><span class="p">),</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"snowfall (cm)"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"snowfall_cm"</span><span class="p">),</span>
+        <span class="n">pl</span><span class="o">.</span><span class="n">col</span><span class="p">(</span><span class="s2">"wind_speed_10m (km/h)"</span><span class="p">)</span><span class="o">.</span><span class="n">alias</span><span class="p">(</span><span class="s2">"wind_kmh"</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="c1"># Citi Bike's monthly reports to NYC DOT, listed at https://citibikenyc.com/system-data/operating-reports;</span>
+<span class="c1"># the file names are not regular, so they are spelled out. May 2026 is not posted</span>
+<span class="n">OPERATING_REPORTS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"https://mot-marketing-whitelabel-prod.s3.us-east-1.amazonaws.com/nyc"</span>
+<span class="p">)</span>
+<span class="n">OPERATING_REPORT_FILES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"JAN-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"February-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"March-2025"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"April-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"May-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"June-2025"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"July-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"August-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"September-2025"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"October-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">11</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"November-2025"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2025</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"December-2025"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"January-2026"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"February-2026"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"March-2026"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"April-2026"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"June-2026"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"July-2026"</span><span class="p">,</span> <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">8</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"August-2026"</span><span class="p">,</span>
+    <span class="n">date</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span> <span class="mi">9</span><span class="p">,</span> <span class="mi">1</span><span class="p">):</span> <span class="s2">"September-2026"</span><span class="p">,</span>
+<span class="p">}</span>  <span class="c1"># fmt: skip</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_rebalanced_bikes</span><span class="p">(</span><span class="n">raw_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Bikes Citi Bike reports it rebalanced each month, by truck, van, valet and Bike Angels.</span>
+
+<span class="sd">    Downloads each monthly report once to `raw_dir/operating-reports/` and reads the sentence</span>
+<span class="sd">    "Citi Bike staff rebalanced a total of N bicycles" with poppler's `pdftotext`.</span>
+<span class="sd">    Columns: month, bikes_rebalanced.</span>
+<span class="sd">    """</span>
+    <span class="n">folder</span> <span class="o">=</span> <span class="n">raw_dir</span> <span class="o">/</span> <span class="s2">"operating-reports"</span>
+    <span class="n">folder</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">date</span> <span class="o">|</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">month</span><span class="p">,</span> <span class="n">stem</span> <span class="ow">in</span> <span class="n">OPERATING_REPORT_FILES</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">folder</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">stem</span><span class="si">}</span><span class="s2">.pdf"</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">OPERATING_REPORTS</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">stem</span><span class="si">}</span><span class="s2">-Citi-Bike-Monthly-Report.pdf"</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">60</span>
             <span class="p">)</span>
-            <span class="n">policy</span><span class="p">,</span> <span class="n">trip</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nonzero</span><span class="p">(</span><span class="n">struck</span><span class="p">)</span>
-            <span class="n">trip</span> <span class="o">+=</span> <span class="n">low</span>
-            <span class="n">np</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">at</span><span class="p">(</span>
-                <span class="n">cancelled_arrivals</span><span class="p">,</span>
-                <span class="p">(</span><span class="n">policy</span><span class="p">,</span> <span class="n">trips</span><span class="o">.</span><span class="n">destination</span><span class="p">[</span><span class="n">trip</span><span class="p">],</span> <span class="n">trips</span><span class="o">.</span><span class="n">end_slot</span><span class="p">[</span><span class="n">trip</span><span class="p">]</span> <span class="o">%</span> <span class="n">SLOTS_PER_DAY</span><span class="p">),</span>
-                <span class="mi">1</span><span class="p">,</span>
+            <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">write_bytes</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>
+            <span class="p">[</span><span class="s2">"pdftotext"</span><span class="p">,</span> <span class="s2">"-layout"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="s2">"-"</span><span class="p">],</span>
+            <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">check</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">stdout</span>
+        <span class="n">found</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+            <span class="sa">r</span><span class="s2">"rebalanced a total of\s+([\d,]+)\s+bicycles"</span><span class="p">,</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">found</span><span class="p">:</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span><span class="s2">"month"</span><span class="p">:</span> <span class="n">month</span><span class="p">,</span> <span class="s2">"bikes_rebalanced"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">found</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">","</span><span class="p">,</span> <span class="s2">""</span><span class="p">))}</span>
             <span class="p">)</span>
-        <span class="n">column</span> <span class="o">=</span> <span class="n">slot</span> <span class="o">%</span> <span class="n">SLOTS_PER_DAY</span>
-        <span class="n">stock</span> <span class="o">=</span> <span class="n">stock</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">ends</span><span class="p">[:,</span> <span class="n">k</span><span class="p">]</span> <span class="o">-</span> <span class="n">cancelled_arrivals</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">column</span><span class="p">],</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="n">cancelled_arrivals</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">column</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="n">full</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">stock</span> <span class="o">-</span> <span class="n">capacity</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-        <span class="n">stock</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">minimum</span><span class="p">(</span><span class="n">stock</span><span class="p">,</span> <span class="n">capacity</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">stock</span><span class="p">,</span> <span class="n">empty</span><span class="p">,</span> <span class="n">full</span>
+    <span class="k">return</span> <span class="n">pl</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
