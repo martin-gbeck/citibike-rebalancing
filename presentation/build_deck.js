@@ -138,9 +138,9 @@ async function build() {
   {
     const s = pres.addSlide({ masterName: "DARK", sectionTitle: "Problem" });
     s.addText("DAO2702X  |  TEAM JUPYTER", { x: M, y: 1.2, w: 7, h: 0.4, fontSize: 14, bold: true, color: C.accent5, charSpacing: 3, margin: 0, isTextBox: true });
-    s.addText("Fewer bikes,\nbetter aimed", { x: M, y: 1.8, w: 7, h: 2.4, fontSize: 60, bold: true, color: C.background1, margin: 0, valign: "top", isTextBox: true });
-    s.addText("When and where Citi Bike should move its bikes, tested on a year of real riders", {
-      x: M, y: 4.4, w: 6.3, h: 1.0, fontSize: 20, color: "C9D3E3", margin: 0, valign: "top", isTextBox: true,
+    s.addText("Where Citi Bike\nshould move\nits bikes", { x: M, y: 1.75, w: 7, h: 2.7, fontSize: 48, bold: true, color: C.background1, margin: 0, valign: "top", isTextBox: true });
+    s.addText("Six schedules replayed on a year of real trips", {
+      x: M, y: 4.85, w: 6.3, h: 1.0, fontSize: 20, color: "C9D3E3", margin: 0, valign: "top", isTextBox: true,
     });
     const statBox = (y, value, label) => {
       s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 8.3, y, w: 4.4, h: 1.85, fill: { color: "22344F" }, line: { type: "none" }, rectRadius: 0.08 });
@@ -149,32 +149,22 @@ async function build() {
     };
     statBox(1.6, "62%", "fewer riders turned away");
     statBox(3.75, "57%", "fewer bikes moved");
-    s.addText("than resetting every station to half full each night", { x: 8.3, y: 5.75, w: 4.4, h: 0.5, fontSize: 13, color: "C9D3E3", margin: 0, isTextBox: true });
-    s.addNotes(
-      "SPEAKER 1 (about 2:30 for slides 1 to 3)\n\n" +
-      "Open with the answer: our schedule turns away 62% fewer riders than resetting stations to half full, and moves 57% fewer bikes doing it.\n" +
-      "Then: in the next 15 minutes we show where that comes from, using every Citi Bike trip from October 2024 to September 2026.\n\n" +
-      "Hook if you want one: picture a commuter at 8:45 who finds an empty station. That rider is lost. Our job is to have fewer of them for each bike Citi Bike pays to move."
-    );
+    s.addText("compared with a half-full reset every night", { x: 8.3, y: 5.75, w: 4.4, h: 0.5, fontSize: 13, color: "C9D3E3", margin: 0, isTextBox: true });
+    s.addNotes("SPEAKER 1 (slides 1 to 3, about 2:30)\n\nStart with the result. Our schedule turns away 62% fewer riders than resetting every station to half full each night, and it moves 57% fewer bikes.\nWe got there by replaying every Citi Bike trip from October 2024 to September 2026. The next 15 minutes show how.\n\nIf you want an opening line: at 8:45 a commuter walks up to an empty station and leaves. We want fewer of those for every bike Citi Bike pays to move.");
   }
 
   // ---------- 2. The imbalance ----------
   {
-    const s = content("Problem", "Every workday morning, homes drain into the offices");
+    const s = content("Problem", "Every workday morning, bikes flow from homes to offices");
     const f = await figure(s, "fig2-rush-map.png", { x: M, y: CONTENT_TOP, w: 7.9, h: 5.15 }, "rush map");
     caption(s, "Bikes each station gains over a workday rush; red loses, blue gains. Development year.", M, f.y + f.h + 0.05, 7.9);
     const x = 9.0;
     stat(s, "9,400", "trips start in the 08:00 hour of a workday", x, 1.6, 3.7);
     stat(s, "1,055", "bikes leave Brooklyn each morning rush, while Manhattan gains 935", x, 3.15, 3.7, C.accent3);
-    s.addText("Home stations run empty, office stations run full, and the evening runs it back.", {
+    s.addText("So home stations run out of bikes and office stations run out of docks. In the evening it flips.", {
       x, y: 4.75, w: 3.7, h: 1.3, fontSize: 16, bold: true, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "The flow on this map is the problem. Red stations lose bikes in the morning rush, blue gain them.\n" +
-      "Numbers: 9,400 trips start in the 08:00 hour. 417 stations lose 5 or more bikes in the morning rush and 294 gain 5 or more. Manhattan gains 935 bikes, Brooklyn loses 1,055. The evening reverses it: Manhattan loses 1,263.\n" +
-      "Why it matters: the next rider at a red station finds no bike, the next at a blue one finds no dock. Both are lost trips.\n\n" +
-      "Likely question: why are the Bronx and Jersey City grey? Their flows are small and balanced, so they need little attention."
-    );
+    s.addNotes("The maps show the morning and the evening rush. Red stations lose bikes, blue ones gain them.\n9,400 trips start in the 08:00 hour alone. In the morning rush 417 stations lose 5 bikes or more and 294 gain 5 or more. Brooklyn loses 1,055 bikes and Manhattan gains 935. In the evening it flips, and Manhattan loses 1,263.\nThe next rider at a red station finds no bike. At a blue one they find no free dock. Either way the trip is lost.\n\nIf asked why the Bronx and Jersey City are grey: their flows are small and even out, so they need little work.");
   }
 
   // ---------- 3. Today and the question ----------
@@ -200,19 +190,14 @@ async function build() {
     s.addText("Each night, which stations should Citi Bike restock or clear, and by how many bikes, to turn away the fewest riders for each bike it moves?\n\nAnd is a second visit during the day worth it?", {
       x: x + 0.35, y: CONTENT_TOP + 0.75, w: 5.0, h: 2.45, fontSize: 18, color: C.background1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addText("It publishes bikes moved per month, but not targets or shortages. So we score against two benchmarks:", {
+    s.addText("Its monthly reports give bikes moved, but no targets or shortages. We compare with two simple rules instead:", {
       x, y: CONTENT_TOP + 3.6, w: 5.73, h: 0.7, fontSize: 14, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
     [["Never move a bike", 0], ["Reset every station to half full each night", 1]].forEach(([t, i]) => {
       card(s, x + i * 2.5, CONTENT_TOP + 4.45, i ? 3.23 : 2.3, 0.85);
       s.addText(t, { x: x + i * 2.5 + 0.2, y: CONTENT_TOP + 4.45, w: (i ? 3.23 : 2.3) - 0.4, h: 0.85, fontSize: 14, bold: true, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
     });
-    s.addNotes(
-      "Citi Bike already fights this with four tools: trucks, bike trains, valets and Bike Angels. It reports about 2,500 bikes moved a day to NYC DOT.\n" +
-      "But it does not publish which stations it fills, to what level, or how many riders still find a station empty. So its plan cannot be scored directly.\n" +
-      "Our question (read it). We measure against two simple benchmarks, and we check our workload against the moves Citi Bike reports.\n\n" +
-      "Likely question: is half full what Citi Bike does? No, its method is not public. Half full is a common, simple rule we use as a yardstick."
-    );
+    s.addNotes("Citi Bike already works on this. It has trucks and vans, e-bikes towing trailers of bikes, valets at the busiest stations, and Bike Angels, which pays members in points to ride bikes from full stations to empty ones. It tells NYC DOT it moves about 2,500 bikes a day.\nIt doesn't publish which stations it fills, to what level, or how many riders still find a station empty. So we can't score its plan directly.\nRead the question out. We compare against never moving a bike and against a half-full reset, and we check our workload against the moves Citi Bike reports.\n\nIf asked whether half full is what Citi Bike does: we don't know, its method isn't public. Half full is a simple rule we use as a yardstick.");
   }
 
   // ---------- 4. Method ----------
@@ -222,8 +207,8 @@ async function build() {
     const steps = [
       ["92.1M trips", "every Citi Bike trip, Oct 2024 to Sep 2026, with start and end station and time"],
       ["Stock every 5 min", "bikes in each of 2,470 stations rebuilt from trips leaving and arriving"],
-      ["Replay a schedule", "set each station's level at 04:00, then let the real riders come"],
-      ["Count the cost", "riders turned away at an empty or full station, and bikes moved"],
+      ["Replay a schedule", "set each station's level at 04:00, then replay the real riders"],
+      ["Count the losses", "riders turned away at an empty or full station, and bikes moved"],
     ];
     const bw = 2.7, gap = 0.4, y = CONTENT_TOP + 0.1;
     steps.forEach(([head, body], i) => {
@@ -235,46 +220,34 @@ async function build() {
     });
     // split by time
     const ty = 4.2;
-    s.addText("Split by time, so nothing is tuned on the year it is scored on", { x: M, y: ty, w: 12, h: 0.4, fontSize: 16, bold: true, color: C.accent6, margin: 0, isTextBox: true });
+    s.addText("The first year picks the settings, the second year scores them", { x: M, y: ty, w: 12, h: 0.4, fontSize: 16, bold: true, color: C.accent6, margin: 0, isTextBox: true });
     const half = (W - 2 * M - 0.2) / 2;
     s.addShape(pres.shapes.RECTANGLE, { x: M, y: ty + 0.55, w: half, h: 0.9, fill: { color: C.accent5 }, line: { type: "none" } });
     s.addShape(pres.shapes.RECTANGLE, { x: M + half + 0.2, y: ty + 0.55, w: half, h: 0.9, fill: { color: C.accent1 }, line: { type: "none" } });
-    s.addText([{ text: "Development year  ", options: { bold: true } }, { text: "Oct 2024 to Sep 2025: explore, choose every setting" }], {
+    s.addText([{ text: "Development year  ", options: { bold: true } }, { text: "Oct 2024 to Sep 2025: explore and pick settings" }], {
       x: M + 0.2, y: ty + 0.55, w: half - 0.4, h: 0.9, fontSize: 15, color: C.background1, margin: 0, valign: "middle", isTextBox: true,
     });
-    s.addText([{ text: "Test year  ", options: { bold: true } }, { text: "Oct 2025 to Sep 2026: scored once" }], {
+    s.addText([{ text: "Test year  ", options: { bold: true } }, { text: "Oct 2025 to Sep 2026: used once, to score" }], {
       x: M + half + 0.4, y: ty + 0.55, w: half - 0.4, h: 0.9, fontSize: 15, color: C.background1, margin: 0, valign: "middle", isTextBox: true,
     });
-    s.addText("A rider turned away at an empty station never rides, so that bike never reaches the other end. Shortages ripple downstream.", {
+    s.addText("A rider turned away at an empty station never rides. The bike they would have brought never arrives, and the station at the other end can run short too.", {
       x: M, y: ty + 1.7, w: 12.1, h: 0.7, fontSize: 15, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "SPEAKER 2 (about 2:30 for slides 4 and 5)\n\n" +
-      "The data only records trips, not how many bikes sit in a station. So we rebuild each station's stock: bikes arriving minus bikes leaving, in 5-minute steps, for 2,470 stations.\n" +
-      "That turns the public data into a simulator. Pick a schedule, set every station's level at 04:00, the quietest hour, and replay the real riders. When a station is empty or full, that rider is turned away, and we count it.\n" +
-      "Cleaning: station ids written with one decimal (7293.10 as 7293.1), depots and demo units listed as stations, 512 repeated trips, and 23 Feb 2026 when the system shut for 22 cm of snow. After fixes 99.9% of trips start at a public station.\n" +
-      "We split by time: every setting is chosen on the first year, and the second year is used once to score.\n\n" +
-      "Likely question: why does a lost rider matter downstream? If they never ride, the bike they would have delivered never arrives, so the next station is short too. A simpler model that ignores this flatters 'never rebalance' (2,173 vs 18,189 riders a day)."
-    );
+    s.addNotes("SPEAKER 2 (slides 4 and 5, about 2:30)\n\nThe trip data never says how many bikes are in a station. We work it out: start from a level, add the bikes that arrive and take away the ones that leave, every 5 minutes, for 2,470 stations.\nThat gives us a simulator. A schedule sets every station's level at 04:00, the quietest hour, and then we replay the real riders. If a rider reaches an empty or full station, they are turned away and we count them.\nWe fixed a few problems in the raw files first. Some months write station 7293.10 as 7293.1. Depots and demo units show up as stations. One file repeats 512 trips. And on 23 February 2026 the system shut for 22 cm of snow. After the fixes, 99.9% of trips start at a public station.\nThe first year is for exploring and picking settings. The second year we used once, to score.\n\nIf asked why a lost rider matters further down the line: if they never ride, the bike they would have dropped off never arrives, so the next station runs short too. A simpler model that skips this makes never rebalancing look far better than it is: 2,173 riders turned away a day instead of 18,189.");
   }
 
   // ---------- 5. Clock ----------
   {
-    const s = content("Data and method", "Each neighbourhood runs on its own clock");
+    const s = content("Data and method", "Homes empty before 10:00, offices empty after 16:00");
     const f = await figure(s, "fig3-neighbourhood-clock.png", { x: M, y: CONTENT_TOP, w: 8.6, h: 5.15 }, "neighbourhood clock");
     caption(s, "Bikes gained per workday hour, 24 neighbourhoods with the largest swings. Development year.", M, f.y + f.h + 0.05, 8.6);
     const x = 9.6;
     stat(s, "726", "bikes leave the East Village over the morning rush", x, 1.6, 3.1, C.accent3);
     stat(s, "1,119", "arrive in Midtown and Times Square over the same hours", x, 3.1, 3.1);
-    s.addText("Offices drain in a sharp window from 16:00 to 19:00, so a visit at 14:00 can still help them.", {
+    s.addText("Offices empty fast between 16:00 and 19:00. A visit at 14:00 still has time to help.", {
       x, y: 4.65, w: 3.1, h: 1.6, fontSize: 15, bold: true, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "Each row is a neighbourhood, each column an hour. Red: losing bikes, blue: gaining.\n" +
-      "Homes at the top empty from 06:00 to 10:00; offices at the bottom fill over the same hours. The evening runs it back.\n" +
-      "Two details shape the schedule. Nightlife areas like Williamsburg and the West Village lose bikes again after 21:00. And the office districts drain between 16:00 and 19:00, which is why a 14:00 visit can still help.\n\n" +
-      "Bridge to next speaker: the pattern is strong, but can we plan it the night before?"
-    );
+    s.addNotes("Each row is a neighbourhood and each column an hour of a workday. Red means losing bikes, blue gaining.\nThe homes at the top empty between 06:00 and 10:00. The East Village alone loses 726 bikes. The offices at the bottom fill over the same hours, and Midtown and Times Square gain 1,119. In the evening it goes the other way.\nTwo things matter for the plan. Williamsburg and the West Village lose bikes again after 21:00, from nightlife. And the office districts empty fast between 16:00 and 19:00, so a visit at 14:00 still has time to help.\n\nHand over with: the pattern is strong, but can you plan it the night before?");
   }
 
   // ---------- 6. Predictable ----------
@@ -293,32 +266,20 @@ async function build() {
       await figure(s, file, { x, y: CONTENT_TOP + 0.85, w: colW, h: 3.7 }, file);
     }
     caption(s, "Development year. Left: 2,190 stations. Right: 30,000 random station-days.", M, 6.08, 12);
-    s.addText("At most stations a night-before plan is off by a little (median miss 1.6 bikes); at the big ones by a lot, which is what a daytime visit is for.", {
+    s.addText("The typical station-day is off by 1.6 bikes. Big stations can be off by much more, and that is what a daytime visit is for.", {
       x: M, y: 6.4, w: W - 2 * M, h: 0.5, fontSize: 15, bold: true, color: C.accent4, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "SPEAKER 3 (about 2:30 for slides 6 and 7)\n\n" +
-      "A night-before plan only works if tomorrow looks like the past. It does.\n" +
-      "Left: each dot is a station, its average morning flow in odd weeks against even weeks. Correlation 0.998: stations keep their habits.\n" +
-      "Right: a single day is noisier. Against the average of the 10 workdays before, correlation 0.90, and the median station-day misses by 1.6 bikes.\n\n" +
-      "Likely question: why 10 days? We tried 5, 10 and 20 on the development year. 20 cut shortages by 1% for 10% more bikes moved, so 10."
-    );
+    s.addNotes("SPEAKER 3 (slides 6 and 7, about 2:30)\n\nA plan made the night before only works if tomorrow looks like the days before it. It does.\nOn the left each dot is a station: its average morning flow in odd weeks against even weeks. The correlation is 0.998, so stations keep their habits.\nOne day on its own is noisier. On the right is a single day against the average of the 10 workdays before it: correlation 0.90. The typical station-day is off by 1.6 bikes.\n\nIf asked why 10 days: we tried 5, 10 and 20 on the first year. 20 days cut shortages by 1% but moved 10% more bikes.");
   }
 
   // ---------- 7. Starting level ----------
   {
-    const s = content("Analysis", "Most shortages are a wrong starting level, not too few docks");
+    const s = content("Analysis", "Most shortages come from starting the day at the wrong level");
     stat(s, "22%", "of workday station-days run empty or full at some point from a half-full start", M, CONTENT_TOP, 5.3, C.accent3, 36);
     stat(s, "1.3%", "would fail from any starting level, because the day's swing is larger than the docks", 6.9, CONTENT_TOP, 5.8, C.accent5, 36);
     const f = await figure(s, "fig8-one-day.png", { x: M, y: 3.0, w: 12.1, h: 3.6 }, "one day at three stations");
     caption(s, "Bikes docked on Tue 12 May 2026. Dashed: the station's docks. Flat at the dashes or at zero = riders turned away.", M, f.y + f.h + 0.02, 12.1);
-    s.addNotes(
-      "Starting half full, a station runs empty or full on 22% of workday station-days. On only 1.3% would no starting level have worked. So almost every shortage is the wrong starting level.\n" +
-      "One ordinary Tuesday at three stations:\n" +
-      "Broadway and W 25 St, an office station with 109 docks. Half full is full by 08:45 and turns away the morning arrivals. Our start of 5 bikes holds almost an hour longer.\n" +
-      "E 10 St and Ave A, a home station: the mirror image. Half full is empty from 09:00 to 16:00; starting near full keeps bikes there all day.\n" +
-      "9 Ave and W 33 St, by Penn Station: the swing is 181 bikes against 94 docks. No start saves it. We come back to these stations at the end."
-    );
+    s.addNotes("Start every station half full and it runs empty or full at some point on 22% of workday station-days. On only 1.3% of them would every starting level have failed. So nearly all of it comes down to the starting level.\nHere is one normal Tuesday at three stations.\nBroadway and W 25 St is an office station with 109 docks. Starting half full, it is full by 08:45 and turns away the morning arrivals. Our start of 5 bikes holds out almost an hour longer.\nE 10 St and Ave A is a home station, the opposite case. Starting half full, it is empty from 09:00 to 16:00. Starting near full keeps bikes there all day.\n9 Ave and W 33 St is next to Penn Station. Its swing is 181 bikes and it has 94 docks, so no start works. Those stations come back at the end.");
   }
 
   // ---------- 8. Band ----------
@@ -335,7 +296,7 @@ async function build() {
     s.addText("all docks full", { x: bx + bw - 1.8, y: by + bh + 0.05, w: 1.8, h: 0.3, fontSize: 12, color: C.accent6, align: "right", margin: 0, isTextBox: true });
     const rules = [
       ["Below the band", "trucks add bikes up to its lower edge", C.accent3],
-      ["Inside the band", "leave it alone, no visit", C.accent1],
+      ["Inside the band", "no visit", C.accent1],
       ["Above the band", "trucks take bikes down to its upper edge", C.accent3],
     ];
     rules.forEach(([head, body, color], i) => {
@@ -343,7 +304,7 @@ async function build() {
       s.addShape(pres.shapes.OVAL, { x: bx, y: y + 0.08, w: 0.28, h: 0.28, fill: { color }, line: { type: "none" } });
       s.addText([{ text: head + ": ", options: { bold: true } }, { text: body }], { x: bx + 0.45, y, w: 5.9, h: 0.45, fontSize: 16, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
     });
-    s.addText("Then rank every possible move across the city by the shortages it prevents, and do the best first.", {
+    s.addText("Then we rank every possible move in the city by the shortages it prevents and do the best ones first.", {
       x: bx, y: 6.2, w: 6.4, h: 0.65, fontSize: 14, bold: true, color: C.accent4, margin: 0, valign: "top", isTextBox: true,
     });
     // how the band is built
@@ -353,7 +314,7 @@ async function build() {
     const steps = [
       ["1", "Take the station's last 10 comparable days: workdays or weekends."],
       ["2", "From each day keep two numbers. Need: the most it fell below its 04:00 stock. Room: its docks minus the most it rose above."],
-      ["3", "Any start below the need, or above the room, turns riders away. The band is the start with the fewest over all 10 days: between the 10th and 11th smallest of the 20 numbers."],
+      ["3", "A start below the need runs empty, one above the room runs full. Count the riders lost for each start over the 10 days. The fewest sit between the 10th and 11th smallest of the 20 numbers."],
     ];
     steps.forEach(([n, t], i) => {
       const y = CONTENT_TOP + 0.85 + i * 1.25;
@@ -364,13 +325,7 @@ async function build() {
     s.addText("The overnight-stock rule of Raviv and Kolka (2013), with the station's own days in place of a demand model.", {
       x: x + 0.3, y: CONTENT_TOP + 5.25 - 0.6, w: w - 0.6, h: 0.55, fontSize: 11, color: C.accent6, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "SPEAKER 4 (about 2:30 for slides 8 to 10)\n\n" +
-      "This is the rule. Every station gets a target band, not a single number. Below it, trucks bring it up to the lower edge. Above it, they take it down to the upper edge. Inside it, nobody visits. That is where half full wastes effort: 27% of its moves go to stations already inside their band.\n" +
-      "How the band is built (right): for each of the last 10 comparable days, the need is how far the station fell below its morning stock, the room is how far it could rise before the docks are full. A start below the need runs empty, above the room runs full. Count the riders turned away for every possible start over the 10 days: the lowest total sits between the 10th and 11th smallest of those 20 numbers.\n" +
-      "Then we rank every single-bike move across the city by how many shortages it prevents and take the best first, up to a nightly budget.\n\n" +
-      "Likely question: why a band and not one target? Inside the band, every start turns away the same number of riders on those 10 days, so moving a bike there buys nothing."
-    );
+    s.addNotes("SPEAKER 4 (slides 8 to 10, about 2:30)\n\nThis is the rule. Each station gets a target band, a range instead of one number. If it is below the band at night, trucks fill it to the bottom of the band. If it is above, they take bikes away down to the top. Inside the band, nobody visits. That is where the half-full reset wastes work: 27% of its moves are at stations already inside their band.\nOn the right is how we build the band. For each of the last 10 comparable days we take two numbers. The need is how far the station fell below its 04:00 stock. The room is how far it could rise before the docks were full. Start below the need and it runs empty. Start above the room and it runs full. Count the riders lost for every possible start over those 10 days, and the lowest total is between the 10th and 11th smallest of the 20 numbers.\nAfter that we rank every single-bike move in the city by how many shortages it prevents, and do the best ones first, up to a nightly budget.\n\nIf asked why a band and not one number: any start inside the band loses the same riders on those 10 days, so moving a bike there buys nothing.");
   }
 
   // ---------- 9. Weather ----------
@@ -383,27 +338,21 @@ async function build() {
     const x = 10.2;
     stat(s, "0.87", "R² on the test year; half of all days within 11%", x, CONTENT_TOP + 0.05, 2.5);
     stat(s, "-6.6%", "trips for each wet hour; Christmas week -45%", x, CONTENT_TOP + 1.65, 2.5, C.accent3);
-    s.addText("Station targets still come from history: stretching them by the forecast made decisions worse.", {
+    s.addText("Stretching station targets by the forecast made results worse, so targets stay on history.", {
       x, y: CONTENT_TOP + 3.25, w: 2.5, h: 1.9, fontSize: 14, bold: true, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "The band handles where. The total number of riders still swings with the weather and season.\n" +
-      "A linear regression of the log of each day's trips on the weather in riding hours (07:00 to 21:00) and the calendar, fitted on the development year, explains 87% of the day-to-day variation in the test year. Median error 11%.\n" +
-      "Effects: each 5 degrees warmer adds 21% up to about 22 C, above that heat costs 6%. Each wet hour costs 6.6%, so five wet hours lose about a third. 5 cm of snow in the last three days costs 20%. Christmas week loses 45%.\n" +
-      "Surprise worth saying: we tried stretching each station's band by tomorrow's forecast. It gave more shortages and more bikes moved. A good forecast of volume does not make a good station decision (Gammelli et al. 2021 find the same). So the forecast sizes the shift, history sets the targets.\n\n" +
-      "Likely question: why log trips? Weather changes trips by a percentage, not a fixed number, so the effects read as percent changes."
-    );
+    s.addNotes("The band decides where the bikes go. How many riders show up still depends on the weather and the season.\nWe fitted a linear regression of the log of each day's trips on the weather between 07:00 and 21:00 and the calendar, on the first year. On the test year it explains 87% of the day-to-day changes, and half of all days are within 11%.\nThe effects: 5 degrees warmer adds 21% up to about 22 degrees, and above that the heat costs 6%. Every wet hour costs 6.6%, so five wet hours take about a third off. 5 cm of snow in the last three days costs 20%. Christmas week loses 45%.\nWe also tried stretching each station's band by tomorrow's forecast. It gave more shortages and more bikes moved. Gammelli and others found the same in 2021. So the forecast tells you how big a crew to send, and history sets the targets.\n\nIf asked why log trips: weather changes trips by a percentage, not by a fixed number, so the effects read as percent changes.");
   }
 
   // ---------- 10. Settings ----------
   {
-    const s = content("The rule", "Every setting was chosen before the test year was opened");
+    const s = content("The rule", "Ten days of history, 3,000 a night, 100 stations at 14:00");
     const head = (t) => ({ text: t, options: { bold: true, color: HEX.lt1, fill: { color: HEX.dk2 } } });
     const rows = [
       [head("Setting"), head("Tried"), head("Chosen"), head("Why")],
       ["Days of history", "5, 10, 20", "10", "20 days cut shortages 1% for 10% more bikes moved"],
       ["Stretch band by forecast", "yes, no", "no", "more shortages and more bikes moved"],
-      ["Daytime visit", "10:00, 12:00, 14:00", "14:00", "fewest shortages, just before offices drain"],
+      ["Daytime visit", "10:00, 12:00, 14:00", "14:00", "fewest shortages, right before offices empty"],
       ["Night budget, day stations", "250 to 9,000 bikes; 25 to 400 stations", "3,000 and 100", "fewest shortages without moving more than Citi Bike's 2,707 a day (Jan to Sep 2025)"],
     ];
     s.addTable(rows, {
@@ -415,11 +364,7 @@ async function build() {
       { text: "The 3,000 counts every bike loaded or unloaded. ", options: { bold: true } },
       { text: "A bike moved is picked up once and dropped once, so the night moves about 1,900 bikes." },
     ], { x: M + 0.3, y: 5.35, w: W - 2 * M - 0.6, h: 1.3, fontSize: 16, color: C.accent4, margin: 0, valign: "middle", isTextBox: true });
-    s.addNotes(
-      "Every setting was fixed on the development year. The test year was opened once, to score.\n" +
-      "The budget rule: we chose the settings with the fewest shortages that do not move more bikes than Citi Bike reported for January to September 2025, 2,707 a day. So we compete on the same workload, not by moving more.\n" +
-      "Say the budget correctly: 3,000 is bikes loaded plus unloaded, about 1,900 bikes moved a night. Past 4,000, extra moves make things worse, because they chase small savings that are mostly noise in 10 days of history."
-    );
+    s.addNotes("We picked every setting on the first year and only then ran the test year.\nThe rule for picking was fewest shortages, without moving more bikes than Citi Bike reported for January to September 2025, which was 2,707 a day. That way we win on the same amount of work, not by moving more.\nSay the budget right. 3,000 counts loads plus unloads, so it is about 1,900 bikes moved a night. Above 4,000 it gets worse, because the extra moves chase small savings that are mostly noise in 10 days of history.");
   }
 
   // ---------- 11. Results ----------
@@ -428,16 +373,10 @@ async function build() {
     const s = content("Results", "62% fewer riders turned away, with 57% fewer bikes moved");
     const f = await figure(s, "fig9-tradeoff.png", { x: M, y: CONTENT_TOP + 0.1, w: 12.1, h: 4.75 }, "schedules compared");
     caption(s, "Test-year averages, 2,470 stations. Band known in advance = perfect foresight, a ceiling no real forecast reaches.", M, f.y + f.h + 0.1, 12.1);
-    s.addText("1.5 riders turned away per 100 trips, moving about what Citi Bike moves today.", {
+    s.addText("That is 1.5 riders turned away per 100 trips, with about as many bikes moved as Citi Bike moves today.", {
       x: M, y: 6.45, w: 12.1, h: 0.45, fontSize: 16, bold: true, color: C.accent4, margin: 0, isTextBox: true,
     });
-    s.addNotes(
-      "SPEAKER 5 (about 2:30 for slides 11 to 13)\n\n" +
-      "Every schedule replayed on the test year it never saw.\n" +
-      "Never moving a bike: 18,189 riders turned away a day. Half full: 5,873 bikes moved and still 4,732 turned away. Every station into its band: 2,032 for 3,321 bikes. Night budget alone: 1,945 for 1,877. Recommended, budget plus the 14:00 visit: 1,779 for 2,549. That is 62% fewer shortages with 57% fewer bikes than half full.\n" +
-      "The pale bar is perfect foresight, 869: the same rule if we knew each day in advance. No real forecast gets there; it shows what is left to win.\n" +
-      "Key point: fewer, better-aimed moves beat more moves. The budget turns away 87 fewer riders than moving every station into its band, with 1,444 fewer bikes."
-    );
+    s.addNotes("SPEAKER 5 (slides 11 to 13, about 2:30)\n\nThese are all the schedules replayed on the test year, which we never used to choose anything.\nNever moving a bike turns away 18,189 riders a day. The half-full reset moves 5,873 bikes and still turns away 4,732. Moving every station into its band: 2,032 riders for 3,321 bikes. The night budget on its own: 1,945 for 1,877. Our recommendation, the budget plus the 14:00 visit: 1,779 for 2,549. Against half full that is 62% fewer riders turned away with 57% fewer bikes moved.\nThe pale bar, 869, is the same rule if we knew every day in advance. No forecast gets there, but it shows what is left to win.\nThe budget also beats banding every station: 87 fewer riders turned away with 1,444 fewer bikes, because it skips the moves that save little.");
   }
 
   // ---------- 12. 14:00 visit ----------
@@ -456,16 +395,12 @@ async function build() {
     });
     stat(s, "166", "fewer riders turned away a day, for 671 more bikes moved", x, CONTENT_TOP + 3.15, 2.4, C.accent1, 36);
     stat(s, "196", "at 17:00, the worst hour; 253 without the visit", x + 2.6, CONTENT_TOP + 3.15, w - 2.6, C.accent1, 36);
-    s.addNotes(
-      "Where do shortages happen? The grey line is half full: 944 riders turned away in the 08:00 hour alone, because the start was wrong. Under our schedule the worst hour is 17:00, when offices drain: 196 riders, 253 without the visit.\n" +
-      "The 14:00 visit sends vans to the 100 stations where moving them back to their rest-of-day band prevents most. It prevents 166 shortages a day for 671 more bikes: 0.25 per bike. Spending the same extra effort at night, raising the budget from 3,000 to 4,000, prevents 0.06 per bike. Four times better.\n\n" +
-      "Likely question: why 14:00 and not noon? We tried 10, 12 and 14 on the development year; 14:00 had the fewest shortages because it comes just before the evening drain."
-    );
+    s.addNotes("Look at when riders are turned away. With half full, 944 are turned away in the 08:00 hour alone, because the start was wrong. With our schedule the worst hour is 17:00, when the offices empty: 196 riders, or 253 without the afternoon visit.\nAt 14:00 vans go to the 100 stations where a top-up prevents the most shortages. That saves 166 riders a day for 671 extra bikes, 0.25 per bike. Spending the same extra effort at night, by raising the budget from 3,000 to 4,000, saves 0.06 per bike. The afternoon visit is four times as good.\n\nIf asked why 14:00 and not noon: we tried 10:00, 12:00 and 14:00 on the first year, and 14:00 had the fewest shortages. It comes right before the evening rush.");
   }
 
   // ---------- 13. Citi Bike's own moves ----------
   {
-    const s = content("Results", "It asks for about the work Citi Bike already does");
+    const s = content("Results", "Our plan moves about as many bikes as Citi Bike does today");
     const f = await figure(s, "fig13-moves-vs-reported.png", { x: M, y: CONTENT_TOP, w: 6.6, h: 5.0 }, "moves vs reported");
     caption(s, "Bikes moved per day by month. May 2026 report not posted.", M, f.y + f.h + 0.05, 6.6);
     const x = 7.7, w = W - M - x;
@@ -474,17 +409,13 @@ async function build() {
     s.addText("Citi Bike cuts harder in winter (974 a day in February against our 1,790). Shortages drop too, from 2,730 a day in June to 250 in February, so the night budget can shrink in winter.", {
       x, y: CONTENT_TOP + 3.45, w, h: 1.7, fontSize: 14, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "Is this realistic? Citi Bike reports its monthly moves to NYC DOT. Our schedule moves 2,572 bikes a day against its 2,514, and the two rise and fall together, correlation 0.92.\n" +
-      "Citi Bike scales down harder in winter. Shortages fall in winter too, so our budget could shrink with the season. It also fits the fleet: 38,069 bikes docked at 04:00 against a fleet of about 39,000.\n\n" +
-      "Careful in Q&A: Citi Bike's 2,514 includes valets and Bike Angels, not just trucks. So the honest claim is 'the same order of work', not 'the same trucks'."
-    );
+    s.addNotes("Is this realistic? Citi Bike reports its moves to NYC DOT every month. Our schedule moves 2,572 bikes a day against its 2,514, and the two go up and down together across the months, with a correlation of 0.92.\nCiti Bike cuts back harder in winter. Shortages fall in winter too, so our budget could shrink in winter as well. It also fits the fleet: we keep 38,069 bikes docked at 04:00, and the fleet is about 39,000.\n\nIn the Q&A, be careful: Citi Bike's 2,514 includes valets and Bike Angels, not only trucks. We can say it is the same amount of work, not the same trucks.");
   }
 
   // ---------- 14. Bottleneck stations ----------
   pres.addSection({ title: "Limits and recommendations" });
   {
-    const s = content("Limits and recommendations", "Seven stations need docks or valets, not trucks");
+    const s = content("Limits and recommendations", "Seven stations are too small for their traffic");
     const f = await figure(s, "fig11-shortages-left.png", { x: M, y: CONTENT_TOP, w: 5.0, h: 5.15 }, "shortages left");
     caption(s, "Riders turned away per day, recommended schedule.", M, f.y + f.h + 0.05, 5.0);
     const x = 6.3, w = W - M - x;
@@ -501,24 +432,20 @@ async function build() {
     s.addText(stations.map((t, i) => ({ text: `${i + 1}.  ${t}`, options: { breakLine: i < stations.length - 1 } })), {
       x, y: CONTENT_TOP + 1.7, w: w, h: 2.6, fontSize: 14, color: C.text1, margin: 0, valign: "top", paraSpaceAfter: 3, isTextBox: true,
     });
-    s.addText("Each swings by more than its docks on a typical workday, so no starting level saves it.", {
+    s.addText("On a normal workday each swings by more than it has docks. They need more docks or a valet.", {
       x, y: CONTENT_TOP + 4.45, w, h: 0.8, fontSize: 15, bold: true, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes(
-      "SPEAKER 6 (about 2:30 for slides 14 to 16)\n\n" +
-      "What is left is concentrated. Seven stations hold a quarter of the remaining shortages, 442 riders a day. Each swings by more than its docks on a normal workday: Penn Station's 9 Ave and W 33 St swings 181 bikes with 94 docks.\n" +
-      "For these, the problem is capacity. Moving bikes at 04:00 cannot fix it. They need more docks or a valet, which Citi Bike already uses at its busiest stations."
-    );
+    s.addNotes("SPEAKER 6 (slides 14 to 16, about 2:30)\n\nWhat is left sits in a few places. Seven stations hold a quarter of the shortages that remain, 442 riders a day. On a normal workday each of them swings by more than it has docks. The one at Penn Station, 9 Ave and W 33 St, swings 181 bikes with 94 docks.\nThese stations are a capacity problem, and moving bikes at 04:00 cannot fix them. They need more docks or a valet. Citi Bike already uses valets at its busiest stations.");
   }
 
   // ---------- 15. Limitations ----------
   {
     const s = content("Limits and recommendations", "What the public data cannot see");
     const items = [
-      ["Riders who give up leave no record", "So demand at often-empty stations is undercounted, and our shortage counts are lower bounds. Every schedule faces the same trips, so the ranking holds."],
-      ["Stock is never measured", "We rebuild it from trips in 5-minute steps; in each step departures go before arrivals, which slightly overstates shortages at the busiest stations."],
-      ["Citi Bike's own plan is not public", "So we compare with two benchmarks and check the workload against its monthly reports, not against its targets."],
-      ["Bikes moved, not dollars", "No route planning and no public cost per bike. Dock counts come from one day in Oct 2026; 81 stations without them are left out."],
+      ["Riders who give up leave no record", "We undercount demand at stations that are often empty, so the real shortages are higher than ours. Every schedule sees the same trips, and the ranking still holds."],
+      ["Stock is never measured", "We work it out from trips in 5-minute steps. Departures count before arrivals in each step, which adds a few shortages at the busiest stations."],
+      ["Citi Bike's own plan is not public", "We compare with two simple rules and check our workload against its monthly reports."],
+      ["No costs or routes", "There is no public cost per bike, and we don't plan van routes. Dock counts come from one day in Oct 2026, and the 81 stations without them are left out."],
     ];
     const cw = (W - 2 * M - 0.4) / 2, ch = 1.95;
     items.forEach(([head, body], i) => {
@@ -530,23 +457,16 @@ async function build() {
       s.addText(body, { x: x + 0.85, y: y + 0.72, w: cw - 1.1, h: ch - 0.85, fontSize: 14, color: C.text1, margin: 0, valign: "top", isTextBox: true });
     });
     s.addText([
-      { text: "Next gain is better forecasts, not more tuning: ", options: { bold: true } },
-      { text: "perfect foresight would turn away 869 riders a day against our 1,779. Events, school calendars and subway disruptions could close part of that gap." },
+      { text: "Where the next gain is: ", options: { bold: true } },
+      { text: "with perfect foresight the same rule turns away 869 riders a day, against our 1,779. Better station forecasts, from events, school calendars or subway disruptions, could close part of that gap." },
     ], { x: M, y: 5.95, w: W - 2 * M, h: 0.85, fontSize: 15, color: C.accent4, margin: 0, valign: "top", isTextBox: true });
-    s.addNotes(
-      "Ranked by how much each could move the result.\n" +
-      "1. Riders who walk away from an empty station leave no trip, so we undercount demand there. Our shortages are lower bounds; the real number is higher. Because every schedule is replayed on the same trips, the comparison still holds.\n" +
-      "2. The data never shows how many bikes are in a station. We calculate it from trips.\n" +
-      "3. Citi Bike does not publish its station-by-station moves, so we compare with never moving and with half full, and check our workload against its reports.\n" +
-      "4. We count bikes, not dollars, and do not plan van routes. A routing step (O'Mahony and Shmoys 2015) would turn the nightly list into routes.\n" +
-      "Future work: the gap to perfect foresight, 1,779 against 869, is day-to-day noise, so station forecasts are worth more than tuning the rule. Bike Angels could also take part of the budget at no truck cost."
-    );
+    s.addNotes("These are ranked by how much each could change the result.\nFirst, a rider who walks away from an empty station leaves no trip. So we undercount demand there, and the real number of riders turned away is higher than ours. Every schedule is replayed on the same trips, though, so the comparison still holds.\nSecond, the data never shows how many bikes are in a station. We work it out from trips.\nThird, Citi Bike doesn't publish its station-by-station moves. We compare with never moving and with half full instead, and check our workload against its monthly reports.\nFourth, we count bikes, not dollars, and we don't plan the van routes. A routing step, like the one O'Mahony and Shmoys built in 2015, would turn the nightly list into routes.\nThe gap to perfect foresight, 1,779 against 869, comes from day-to-day noise. Better station forecasts would help more than more tuning. Bike Angels could also take over part of the budget without any trucks.");
   }
 
   // ---------- 16. Recommendations ----------
   {
     const s = pres.addSlide({ masterName: "DARK", sectionTitle: "Limits and recommendations" });
-    s.addText("Five changes, ranked by the riders they keep", { placeholder: "title" });
+    s.addText("Five changes, biggest effect first", { placeholder: "title" });
     const recs = [
       ["Replace the half-full reset with a target band per station", "2,700 fewer riders turned away, 2,552 fewer bikes moved"],
       ["Treat the seven high-swing stations as a capacity problem", "442 riders a day: add docks or valets"],
@@ -561,18 +481,10 @@ async function build() {
       s.addText(head, { x: M + 0.8, y, w: 6.6, h: 0.8, fontSize: 17, bold: true, color: C.background1, margin: 0, valign: "middle", isTextBox: true });
       s.addText(evidence, { x: M + 7.5, y, w: 4.4, h: 0.8, fontSize: 14, color: "C9D3E3", margin: 0, valign: "middle", isTextBox: true });
     });
-    s.addText("Move fewer bikes, to the right stations, at the right time.", {
-      x: M, y: 6.35, w: W - 2 * M, h: 0.55, fontSize: 22, bold: true, color: "6FA3EA", margin: 0, isTextBox: true,
+    s.addText("Together: 1,779 riders turned away a day instead of 4,732, with 2,549 bikes moved instead of 5,873.", {
+      x: M, y: 6.3, w: W - 2 * M, h: 0.6, fontSize: 18, bold: true, color: "6FA3EA", margin: 0, isTextBox: true,
     });
-    s.addNotes(
-      "Ranked by the riders each one stops turning away on the test year.\n" +
-      "1. Target bands instead of half full: the biggest gain. Plan workdays and weekends separately from each station's last 10 comparable days.\n" +
-      "2. Seven stations are a capacity problem: docks or valets.\n" +
-      "3. A 14:00 visit to the 100 neediest stations, the best use of extra bikes.\n" +
-      "4. Cap the night at 3,000 loads and unloads, about 1,900 bikes, best moves first. Mostly a cost saving.\n" +
-      "5. Use the weather forecast to decide how many trucks and crews to send. Targets still come from each station's history.\n\n" +
-      "Close: together this turns away 62% fewer riders than half full while moving 57% fewer bikes, about what Citi Bike moves today. Thank you, we are happy to take questions."
-    );
+    s.addNotes("Ranked by how many riders each one saves on the test year.\nOne, replace the half-full reset with target bands, planned separately for workdays and weekends from each station's last 10 comparable days. This is the biggest gain: 2,700 fewer riders turned away and 2,552 fewer bikes moved.\nTwo, treat the seven stations as a capacity problem and give them docks or valets.\nThree, send vans to the 100 neediest stations at 14:00. It is the best use of extra bikes.\nFour, cap the night at 3,000 loads and unloads, about 1,900 bikes, best moves first. This mostly saves cost.\nFive, use the weather forecast to decide how many trucks and crews go out. The targets still come from each station's history.\n\nTo close: together this turns away 62% fewer riders than half full while moving 57% fewer bikes, about what Citi Bike moves today. Thank you, we're happy to take questions.");
   }
 
   // ---------- Backups ----------
@@ -581,7 +493,7 @@ async function build() {
     const s = content("Backup for Q&A", "Backup: members ride the rush hours; weekends ride midday");
     const f = await figure(s, "fig1-daily-rhythm.png", { x: M, y: CONTENT_TOP + 0.2, w: 12.1, h: 4.9 }, "daily rhythm");
     caption(s, "Average trips started per hour, development year.", M, f.y + f.h + 0.05, 12.1);
-    s.addNotes("If asked why we plan workdays and weekends separately: members drive the 08:00 and 17:00 peaks on workdays, while weekends and casual riders follow one smooth midday curve.");
+    s.addNotes("If asked why workdays and weekends are planned separately: members make the 08:00 and 17:00 peaks on workdays. Weekends and casual riders follow one smooth curve around midday.");
   }
   {
     const s = content("Backup for Q&A", "Backup: a quarter of the stations take 80% of the moves");
@@ -593,7 +505,7 @@ async function build() {
     s.addText("Drop-offs: Upper West Side and central Brooklyn, ready for the morning. Pick-ups: Chelsea, the Financial District and Brooklyn Heights.", {
       x, y: CONTENT_TOP + 3.5, w, h: 1.5, fontSize: 14, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes("646 stations, about a quarter, take 80% of the work. If asked where the trucks go, use this map.");
+    s.addNotes("646 stations, about a quarter, do 80% of the work. Use this map if someone asks where the trucks go.");
   }
   {
     const s = content("Backup for Q&A", "Backup: why a lost rider must also fail to arrive");
@@ -610,10 +522,10 @@ async function build() {
     s.addText("In the simple model never moving a bike looks better than half full. It is not: once lost riders stop refilling the stations downstream, it reaches 18,189. The order of the schedules that move bikes is the same in both.", {
       x: M, y: 4.8, w: W - 2 * M, h: 1.3, fontSize: 16, color: C.text1, margin: 0, valign: "top", isTextBox: true,
     });
-    s.addNotes("Our first draft used the simple model, so if someone saw an earlier version, this is why the headline changed.");
+    s.addNotes("Our first draft used the simple model. If someone saw an earlier version, this is why the headline changed.");
   }
   {
-    const s = content("Backup for Q&A", "Backup: numbers that are easy to mix up");
+    const s = content("Backup for Q&A", "Backup: numbers people mix up");
     const items = [
       ["3,000", "is the night budget in bikes loaded plus unloaded; it moves about 1,900 bikes (1,877 a day on the test year)"],
       ["2,514", "is Citi Bike's reported moves a day, and includes valets and Bike Angels, not only trucks"],
@@ -625,7 +537,7 @@ async function build() {
       s.addText(value, { x: M, y, w: 2.6, h: 0.9, fontSize: 34, bold: true, color: C.accent1, margin: 0, valign: "middle", isTextBox: true });
       s.addText(label, { x: M + 2.8, y, w: 9.3, h: 0.9, fontSize: 16, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
     });
-    s.addNotes("Read before the talk. These are the numbers a sharp question will test.");
+    s.addNotes("Read these before the talk. A sharp question will test exactly these numbers.");
   }
 
   await pres.writeFile({ fileName: OUT });
