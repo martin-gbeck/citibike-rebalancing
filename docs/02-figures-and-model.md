@@ -89,7 +89,10 @@ Figures 6 and 7 come from a linear regression that forecasts **how many trips th
 
 **The model.** One row per day. Fitted on the first year (364 days), scored on the second.
 
-$$\log(\text{trips}) = \beta_0 + \beta_1\,\text{temp} + \beta_2\,\text{warm excess} + \beta_3\,\text{wet hours} + \beta_4\,\text{snow 3 days} + \beta_5\,\text{wind} + \beta_6\,\text{weekend} + \beta_7\,\text{Christmas week} + \varepsilon$$
+$$\begin{aligned}
+\log(\text{trips}) = {} & \beta_0 + \beta_1\,\text{temp} + \beta_2\,\text{warm excess} + \beta_3\,\text{wet hours} + \beta_4\,\text{snow 3 days} \\
+& + \beta_5\,\text{wind} + \beta_6\,\text{weekend} + \beta_7\,\text{Christmas week} + \varepsilon
+\end{aligned}$$
 
 | Variable | What it is |
 |---|---|
